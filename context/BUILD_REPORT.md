@@ -23,17 +23,15 @@ $ vitest run
 
  Test Files  4 passed (4)
       Tests  37 passed (37)
-   Start at  16:14:33
-   Duration  704ms (import 40%, tests 27%, transform 19%, setup 7%, worker 7%)
+   Start at  16:18:15
+   Duration  764ms (import 31%, tests 29%, transform 24%, setup 8%, worker 8%)
 
-
-Wall time: 1.81 seconds
 ```
 
 ## Manual checks (§8.4)
 | Step | PASS / FAIL / MANUAL-PENDING | What I saw |
 |---|---|---|
-| 1 | PASS | `dist/` contains `manifest.json`, `background.js`, `popup.html`, `dialog.html`, `player.html`, `icons/` (16/32/48/128 + svg), and exactly one CSS file `dist/assets/dom-QSyx_CHW.css`. `grep -l 'bg-red-600' dist/assets/*.css` matched that file. |
+| 1 | PASS | `dist/` contains `manifest.json`, `background.js`, `popup.html`, `dialog.html`, `player.html`, `icons/` (16/32/48/128 + svg), and exactly one CSS file `dist/assets/dom-Bh0BIbEH.css`. `grep -l 'bg-red-600' dist/assets/*.css` matched that file. |
 | 2 | MANUAL-PENDING | Load `dist/` unpacked in `chrome://extensions`; confirm no service-worker errors; open `tests/manual/links.html`. |
 | 3 | MANUAL-PENDING | Right-click "Single video" → Add to TubeList → Save as new playlist...; dialog shows the Rick Astley title; save as `Test A`; popup shows `Test A · 1 videos` with thumbnail, duration, channel `Rick Astley`, `17 years ago`. Note: duration will read `3:33` (213 s), not `3:34` — see Deviations. |
 | 4 | MANUAL-PENDING | Right-click "Short link video" → pick `Test A`: green ✓ badge, 2 videos; repeat: `=` badge, still 2 videos. |
