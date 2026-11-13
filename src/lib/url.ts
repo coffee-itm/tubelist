@@ -5,6 +5,9 @@ export const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 export const YT_LINK_PATTERNS = ['*://*.youtube.com/*', '*://youtube.com/*', '*://youtu.be/*'];
 export const playerUrl = (id: string, playlistId?: string) =>
   chrome.runtime.getURL(`${PLAYER_PAGE}?${new URLSearchParams(playlistId ? { v: id, pl: playlistId } : { v: id })}`);
+export function openDialog(url: string): void {
+  chrome.windows.create({ url: chrome.runtime.getURL('dialog.html?url=' + encodeURIComponent(url)), type: 'popup', width: 440, height: 320 });
+}
 export const embedUrl = (id: string) =>
   `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1&rel=0&playsinline=1`;
 export const thumbUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;

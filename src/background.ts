@@ -1,4 +1,4 @@
-import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
+import { classifyUrl, openDialog, YT_LINK_PATTERNS } from './lib/url';
 import { fetchVideo } from './lib/innertube';
 import { addVideo, getPlaylists } from './lib/store';
 
@@ -50,10 +50,6 @@ function flash(text: string, title: string): void {
     chrome.action.setBadgeText({ text: '' });
     chrome.action.setTitle({ title: 'TubeList' });
   }, 2500);
-}
-
-function openDialog(url: string): void {
-  chrome.windows.create({ url: chrome.runtime.getURL('dialog.html?url=' + encodeURIComponent(url)), type: 'popup', width: 440, height: 320 });
 }
 
 chrome.runtime.onInstalled.addListener(() => {
