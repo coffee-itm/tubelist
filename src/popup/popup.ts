@@ -2,12 +2,11 @@ import '../styles.css';
 import { h } from '../lib/dom';
 import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist } from '../lib/store';
 import { formatDuration, formatPublished } from '../lib/format';
-import { classifyUrl, openDialog, playerUrl } from '../lib/url';
+import { playerUrl } from '../lib/url';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
 let openId: string | null = null;
-let tabUrl: string | null = null;
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
 const HEADER = 'sticky top-0 z-10 flex items-center gap-2 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 backdrop-blur';
@@ -18,7 +17,6 @@ const KIND: Record<PlaylistKind, [string, string]> = {
 };
 
 async function render(): Promise<void> {
-  tabUrl ??= (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.url ?? '';
   const playlists = await getPlaylists();
   const playlist = playlists.find(p => p.id === openId);
   if (openId && !playlist) openId = null;
@@ -36,20 +34,13 @@ function logo(size: number, className = ''): HTMLImageElement {
 
 function list(playlists: Playlist[]): HTMLElement {
   const root = h('div');
-  const header = h('div', HEADER,
-    logo(24),
-    h('span', 'font-semibold', 'TubeList'),
-    h('span', 'ml-auto text-xs text-zinc-500', String(playlists.length)),
+  root.append(
+    h('div', HEADER,
+      logo(24),
+      h('span', 'font-semibold', 'TubeList'),
+      h('span', 'ml-auto text-xs text-zinc-500', String(playlists.length)),
+    ),
   );
-  if (classifyUrl(tabUrl ?? '').type !== 'invalid') {
-    const add = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '+ Add this tab');
-    add.addEventListener('click', () => {
-      openDialog(tabUrl!);
-      window.close();
-    });
-    header.append(add);
-  }
-  root.append(header);
 
   if (playlists.length === 0) {
     root.append(
@@ -57,9 +48,9 @@ function list(playlists: Playlist[]): HTMLElement {
         logo(48, 'opacity-80 mx-auto mb-3'),
         'No playlists yet.',
         h('br'),
-        'Open a YouTube video or playlist and press ',
-        h('strong', '', '+ Add this tab'),
-        ', or right-click any YouTube link → Add to TubeList → Save as new playlist....',
+        'Right-click any YouTube link → ',
+        h('strong', '', 'Add to TubeList'),
+        '.',
       ),
     );
     return root;

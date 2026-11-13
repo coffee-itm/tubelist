@@ -1,4 +1,4 @@
-import { getPlaylists, savePlaylist, findBySourceId, addVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName } from '../src/lib/store';
+import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName } from '../src/lib/store';
 import type { Video } from '../src/lib/types';
 
 const vid = (id: string): Video => ({
@@ -71,6 +71,18 @@ it('sorts newest first', async () => {
   await savePlaylist({ name: 'new', kind: 'custom', sourceId: null, videos: [] });
   vi.useRealTimers();
   expect((await getPlaylists()).map(p => p.name)).toEqual(['new', 'old']);
+});
+
+it('adds to an auto-created Saved playlist, once per video, surviving rename', async () => {
+  expect(await addToSaved(vid('aaaaaaaaaaa'))).toBe('added');
+  const [p] = await getPlaylists();
+  expect(p).toMatchObject({ name: 'Saved', kind: 'custom', sourceId: SAVED_SOURCE_ID });
+  await renamePlaylist(p.id, 'Inbox');
+  expect(await addToSaved(vid('aaaaaaaaaaa'))).toBe('duplicate');
+  expect(await addToSaved(vid('bbbbbbbbbbb'))).toBe('added');
+  const all = await getPlaylists();
+  expect(all).toHaveLength(1);
+  expect(all[0].videos.map(v => v.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb']);
 });
 
 it('cleans names', () => {

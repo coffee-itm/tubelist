@@ -1,6 +1,6 @@
-import { classifyUrl, openDialog, YT_LINK_PATTERNS } from './lib/url';
-import { fetchVideo } from './lib/innertube';
-import { addVideo, getPlaylists } from './lib/store';
+import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
+import { fetchPlaylistIds, fetchQueueIds, fetchVideo, fetchVideos } from './lib/innertube';
+import { addToSaved, findBySourceId, savePlaylist } from './lib/store';
 
 const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
   {
@@ -26,20 +26,10 @@ async function installRules(): Promise<void> {
 const create = (props: chrome.contextMenus.CreateProperties) =>
   chrome.contextMenus.create(props, () => void chrome.runtime.lastError);
 
-async function rebuildMenus(): Promise<void> {
+async function buildMenus(): Promise<void> {
   await chrome.contextMenus.removeAll();
-  const playlists = await getPlaylists();
-
   create({ id: 'link', title: 'Add to TubeList', contexts: ['link'], targetUrlPatterns: YT_LINK_PATTERNS });
   create({ id: 'page', title: 'Add this page to TubeList', contexts: ['page', 'video'], documentUrlPatterns: ['*://*.youtube.com/*'] });
-
-  for (const prefix of ['link', 'page']) {
-    create({ id: `${prefix}:new`, parentId: prefix, title: 'Save as new playlist…' });
-    create({ id: `${prefix}:sep`, parentId: prefix, type: 'separator' });
-    for (const p of playlists) {
-      create({ id: `${prefix}:pl:${p.id}`, parentId: prefix, title: p.name.length > 40 ? p.name.slice(0, 40) + '…' : p.name });
-    }
-  }
 }
 
 function flash(text: string, title: string): void {
@@ -54,16 +44,12 @@ function flash(text: string, title: string): void {
 
 chrome.runtime.onInstalled.addListener(() => {
   void installRules();
-  void rebuildMenus();
+  void buildMenus();
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void installRules();
-  void rebuildMenus();
-});
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.playlists) void rebuildMenus();
+  void buildMenus();
 });
 
 chrome.contextMenus.onClicked.addListener(info => {
@@ -74,24 +60,29 @@ async function handleClick(info: chrome.contextMenus.OnClickData): Promise<void>
   const url = info.linkUrl ?? info.pageUrl ?? '';
   const link = classifyUrl(url);
   if (link.type === 'invalid') return flash('!', 'Not a YouTube video/playlist link');
-
-  const menuId = String(info.menuItemId);
-  if (menuId.endsWith(':new')) return openDialog(url);
-  if (!menuId.includes(':pl:')) return;
-  const targetId = menuId.slice(menuId.indexOf(':pl:') + 4);
-
-  const videoId = link.videoId;
-  if (videoId) {
-    try {
+  try {
+    const videoId = link.type === 'queue' ? null : link.videoId;
+    if (videoId) {
       const v = await fetchVideo(videoId);
       if (!v) return flash('!', 'Video unavailable');
-      const name = (await getPlaylists()).find(p => p.id === targetId)?.name ?? '';
-      const result = await addVideo(targetId, { ...v, addedAt: Date.now() });
-      flash(result === 'added' ? '✓' : '=', `${result === 'added' ? 'Added to' : 'Already in'} ${name}`);
-    } catch (err) {
-      flash('!', err instanceof Error ? err.message : String(err));
+      const result = await addToSaved({ ...v, addedAt: Date.now() });
+      return flash(result === 'added' ? '✓' : '=', `${result === 'added' ? 'Saved' : 'Already in Saved'}: ${v.title}`);
     }
-  } else {
-    openDialog(url);
+    if (link.type === 'video') return; // unreachable: video links always carry an id; narrows link to playlist | queue
+    chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+    chrome.action.setBadgeText({ text: '...' });
+    const isQueue = link.type === 'queue';
+    const { title, ids } = isQueue ? { title: null, ids: await fetchQueueIds(link) } : await fetchPlaylistIds(link.listId);
+    if (ids.length === 0) return flash('!', 'No videos found in this link');
+    const videos = await fetchVideos(ids, (done, total) => chrome.action.setBadgeText({ text: `${Math.floor((done / total) * 100)}%` }));
+    if (videos.length === 0) return flash('!', 'None of the videos are available');
+    const sourceId = link.listId;
+    const existing = sourceId ? await findBySourceId(sourceId) : undefined;
+    const name = existing?.name ?? (isQueue ? 'Queue ' + new Date().toLocaleString() : (title ?? 'YouTube playlist'));
+    await savePlaylist({ name, kind: isQueue ? 'queue' : 'youtube', sourceId, videos });
+    flash('✓', `Saved ${videos.length} videos to ${name}`);
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    flash('!', text.includes('HTTP 400') ? 'Playlist not found or private' : text);
   }
 }

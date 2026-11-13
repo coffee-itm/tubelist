@@ -52,6 +52,21 @@ export async function addVideo(playlistId: string, v: Video): Promise<'added' | 
   return 'added';
 }
 
+export const SAVED_SOURCE_ID = 'tubelist:saved';
+
+export async function addToSaved(v: Video): Promise<'added' | 'duplicate'> {
+  const playlists = await read();
+  let p = playlists.find(x => x.sourceId === SAVED_SOURCE_ID);
+  if (!p) {
+    p = { id: crypto.randomUUID(), name: 'Saved', kind: 'custom', sourceId: SAVED_SOURCE_ID, createdAt: Date.now(), videos: [] };
+    playlists.push(p);
+  }
+  if (p.videos.some(x => x.id === v.id)) return 'duplicate';
+  p.videos.push(v);
+  await write(playlists);
+  return 'added';
+}
+
 export async function removeVideo(playlistId: string, videoId: string): Promise<void> {
   const playlists = await read();
   const p = requirePlaylist(playlists, playlistId);
