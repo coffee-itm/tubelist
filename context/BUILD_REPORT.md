@@ -1,5 +1,5 @@
 # TubeList build report
-Model: 9router/tokenharbor/deepseek-v4.1-flash:free   Date: 2026-11-13   Commit: 1799139
+Model: 9router/cc/claude-opus-5-5   Date: 2026-11-13   Commit: 415e430
 
 ## Milestones
 | # | Status (PASS/FAIL/PARTIAL) | Notes |
@@ -8,11 +8,11 @@ Model: 9router/tokenharbor/deepseek-v4.1-flash:free   Date: 2026-11-13   Commit:
 | M2 | PASS | `pnpm test` green (21 tests). One arithmetic fix in `format.test.ts`, see Deviations. |
 | M3 | PASS | `pnpm test` green (30 tests). |
 | M4 | PASS | `pnpm test` green (37 tests). `scripts/capture-fixtures.sh` ran live against youtube.com; fixtures committed unedited (browse-page1: title `Popular Music Videos`, 100 IDs + token; browse-last: 82 IDs, no token; next-queue: the 3 expected IDs). |
-| M5 | PARTIAL | `pnpm build` exit 0. Context-menu/service-worker browser check is MANUAL-PENDING (no Chrome/Chromium binary on this machine). DNR child-item context handling was checked against Chromium source (`context_menu_matcher.cc`): children inherit visibility from the parent, so children carry no `contexts`. |
+| M5 | PARTIAL | `pnpm build` exit 0. Context-menu/service-worker browser check is MANUAL-PENDING (no Chrome/Chromium binary on this machine). contextMenus child-item context handling was checked against Chromium source (`context_menu_matcher.cc`): children inherit visibility from the parent, so children carry no `contexts`. |
 | M6 | PARTIAL | Builds clean; §8.4 steps 3, 5, 6, 7 MANUAL-PENDING. |
 | M7 | PARTIAL | Builds clean; §8.4 steps 4, 9 MANUAL-PENDING. |
 | M8 | PARTIAL | Builds clean; §8.4 step 8 (and 8b) MANUAL-PENDING. |
-| M9 | PARTIAL | `pnpm build && pnpm test` green; §8.4 steps 2–11 not runnable here (no browser), all marked MANUAL-PENDING below. |
+| M9 | PARTIAL | `pnpm build && pnpm test` green; §8.4 steps 2–11 not runnable here (no browser), all marked MANUAL-PENDING below. Review fixes in 415e430: spec ellipsis literals, focus rings, player heading edge case. |
 
 ## Test output
 ```
@@ -23,23 +23,11 @@ $ vitest run
 
  Test Files  4 passed (4)
       Tests  37 passed (37)
-   Start at  15:47:13
-   Duration  1.39s (import 32%, tests 31%, transform 22%, setup 8%, worker 7%)
+   Start at  16:14:33
+   Duration  704ms (import 40%, tests 27%, transform 19%, setup 7%, worker 7%)
 
-```
 
-Build output tail:
-```
-dist/assets/dom-QSyx_CHW.css       19.37 kB │ gzip: 4.82 kB
-dist/chunks/dom-BHBdBvMf.js         0.12 kB │ gzip: 0.12 kB
-dist/chunks/format-CEbLiA5C.js      0.57 kB │ gzip: 0.36 kB
-dist/chunks/url-jPAzEyjS.js         2.28 kB │ gzip: 1.06 kB
-dist/dialog.js                      2.43 kB │ gzip: 1.21 kB
-dist/background.js                  2.53 kB │ gzip: 1.22 kB
-dist/player.js                      2.70 kB │ gzip: 1.41 kB
-dist/chunks/innertube-pXqu6Wt9.js   2.71 kB │ gzip: 1.37 kB
-dist/popup.js                       4.74 kB │ gzip: 2.02 kB
-✓ built in 410ms
+Wall time: 1.81 seconds
 ```
 
 ## Manual checks (§8.4)
@@ -66,6 +54,9 @@ dist/popup.js                       4.74 kB │ gzip: 2.02 kB
 - §7.9/§8.2 — `tests/setup.ts` assigns the fake as `as unknown as typeof chrome` instead of `as any` (project style rule; fake is still the exact shape the plan specifies).
 - §7.8 — "Up next" rows are `<button>` and therefore also carry `w-full text-left`; the remaining classes match the popup row with `hover:bg-zinc-800` as specified.
 - §7.7 — the published-date `title` attribute is only set when `publishedAt` is non-null (avoids `1/1/1970` on unknown dates); the visible relative text is unchanged.
+- §4 — committed `pnpm-lock.yaml` — produced by the §5 `pnpm add`; it pins the dev dependencies for reproducible installs.
+- §7.6/§7.8 — added `focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2` to dialog `#cancel`/`#save` and player `#yt-link` — §7.7 requires it on every interactive element and §8.4 step 8b requires focus rings on all pages; the §7.6/§7.8 class strings omit it.
+- §7.8 — "Up next" heading reads "Up next" (no i/n) when the current video is not in the resolved playlist — prevents "0/n".
 
 ## Contingencies used (§9)
 - None — the pinned `CLIENT_VERSION` returned 200 for all fixture captures, HTML landed at `dist/*.html`, Tailwind emitted utilities on the first build, and `parseBrowse` found 100 lockup IDs on page 1.
