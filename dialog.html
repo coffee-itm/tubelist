@@ -5,8 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="icons/icon.svg">
     <title>Add to TubeList</title>
+    <script type="module" src="/src/dialog/dialog.ts"></script>
   </head>
-  <body>
-    <h1>Add to TubeList</h1>
+  <body class="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans p-5 antialiased">
+    <div class="flex items-center gap-2 mb-3">
+      <img src="icons/icon.svg" width="24" height="24" alt="">
+      <h1 id="heading" class="text-base font-semibold"></h1>
+    </div>
+    <p id="info" class="text-sm text-zinc-500 dark:text-zinc-400 mb-4 line-clamp-2"></p>
+    <label class="block text-xs font-medium text-zinc-600 dark:text-zinc-300 mb-1" for="name">Playlist name</label>
+    <input id="name" maxlength="100" class="w-full rounded-lg border border-zinc-300 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500">
+    <p id="status" role="status" aria-live="polite" class="mt-3 min-h-5 text-sm"></p>
+    <div class="mt-4 flex justify-end gap-2">
+      <button id="cancel" class="rounded-lg px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800">Cancel</button>
+      <button id="save" disabled class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed">Save</button>
+    </div>
   </body>
 </html>
