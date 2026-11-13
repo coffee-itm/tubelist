@@ -46,7 +46,7 @@ async function init(): Promise<void> {
 
   if (link.type === 'invalid') return showError('Not a YouTube video, playlist or queue link.');
 
-  statusEl.replaceChildren(h('span', 'inline-block size-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent align-[-2px] mr-2'), 'Loading...');
+  statusEl.replaceChildren(h('span', 'inline-block size-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent align-[-2px] mr-2'), 'Loading…');
 
   try {
     if (link.type === 'video') {
@@ -102,7 +102,7 @@ async function save(): Promise<void> {
     const collected: Video[] =
       kind === 'custom'
         ? videos.map(v => ({ ...v, addedAt: Date.now() }))
-        : await fetchVideos(videoIds, (done, total) => setStatus(`Fetching details ${done}/${total}...`));
+        : await fetchVideos(videoIds, (done, total) => setStatus(`Fetching details ${done}/${total}…`));
 
     if (collected.length === 0) {
       setStatus('None of the videos are available.', 'error');

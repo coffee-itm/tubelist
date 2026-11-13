@@ -84,7 +84,7 @@ async function start(firstId: string): Promise<void> {
     linkEl.href = `https://www.youtube.com/watch?v=${id}`;
 
     const index = playlist ? playlist.videos.findIndex(x => x.id === id) : -1;
-    if (heading && playlist) heading.textContent = `Up next · ${Math.max(index + 1, 0)}/${playlist.videos.length}`;
+    if (heading && playlist) heading.textContent = index < 0 ? 'Up next' : `Up next · ${index + 1}/${playlist.videos.length}`;
 
     rows.forEach((row, i) => {
       const active = i === index;

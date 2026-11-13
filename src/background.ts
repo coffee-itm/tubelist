@@ -34,10 +34,10 @@ async function rebuildMenus(): Promise<void> {
   create({ id: 'page', title: 'Add this page to TubeList', contexts: ['page', 'video'], documentUrlPatterns: ['*://*.youtube.com/*'] });
 
   for (const prefix of ['link', 'page']) {
-    create({ id: `${prefix}:new`, parentId: prefix, title: 'Save as new playlist...' });
+    create({ id: `${prefix}:new`, parentId: prefix, title: 'Save as new playlist…' });
     create({ id: `${prefix}:sep`, parentId: prefix, type: 'separator' });
     for (const p of playlists) {
-      create({ id: `${prefix}:pl:${p.id}`, parentId: prefix, title: p.name.length > 40 ? p.name.slice(0, 40) + '...' : p.name });
+      create({ id: `${prefix}:pl:${p.id}`, parentId: prefix, title: p.name.length > 40 ? p.name.slice(0, 40) + '…' : p.name });
     }
   }
 }

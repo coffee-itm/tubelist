@@ -103,7 +103,7 @@ function detail(p: Playlist): HTMLElement {
     void render();
   });
 
-  const name = h('input', 'min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-red-500');
+  const name = h('input', `min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-red-500 ${FOCUS}`);
   name.value = p.name;
   name.setAttribute('aria-label', 'Playlist name');
   const commitName = async () => {

@@ -14,7 +14,7 @@ export interface Playlist {
   id: string;                 // crypto.randomUUID()
   name: string;
   kind: PlaylistKind;
-  sourceId: string | null;    // YouTube list ID for 'youtube'/'queue' (TL... id), null for custom & watch_videos queues
+  sourceId: string | null;    // YouTube list ID for 'youtube'/'queue' (TL… id), null for custom & watch_videos queues
   createdAt: number;
   videos: Video[];
 }
