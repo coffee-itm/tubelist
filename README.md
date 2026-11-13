@@ -8,6 +8,7 @@ A lightweight browser extension (Manifest V3, Chromium) that turns YouTube video
 - **Plays sync with your account** — TubeList frames the actual `youtube.com/watch` page (signed in), so YouTube itself records watch history and the resume position.
 - **Progress bars & resume** — watched percentages on every thumbnail, auto-resume where you left off.
 - **Lite player chrome** — the watch page is trimmed to just the video player; no masthead, sidebar or comments.
+- **Share a playlist** — the popup copies a YouTube `watch_videos` queue link for the playlist (first 50 videos); anyone can open it as a temporary YouTube playlist, and another TubeList user can right-click it → *Add to TubeList*.
 - **Local-first playlists** — playlists live in `chrome.storage.local`. No account, no server, nothing leaves your machine.
 
 ## How it works

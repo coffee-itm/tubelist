@@ -1,4 +1,4 @@
-import { classifyUrl, playerUrl, watchUrl } from '../src/lib/url';
+import { classifyUrl, playerUrl, queueUrl, watchUrl } from '../src/lib/url';
 
 it.each([
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
@@ -26,4 +26,11 @@ it('builds player URLs', () => {
 it('builds watch URLs', () => {
   expect(watchUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   expect(watchUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=125s');
+});
+
+it('builds queue links', () => {
+  expect(queueUrl(['dQw4w9WgXcQ'])).toBe('https://www.youtube.com/watch_videos?video_ids=dQw4w9WgXcQ');
+  expect(queueUrl(['dQw4w9WgXcQ', '9bZkp7q19f0'])).toBe('https://www.youtube.com/watch_videos?video_ids=dQw4w9WgXcQ,9bZkp7q19f0');
+  const many = Array.from({ length: 51 }, (_, i) => `vid${String(i).padStart(8, '0')}`);
+  expect(queueUrl(many).split('video_ids=')[1].split(',')).toHaveLength(50);
 });

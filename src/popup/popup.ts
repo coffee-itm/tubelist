@@ -3,7 +3,7 @@ import { h } from '../lib/dom';
 import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist } from '../lib/store';
 import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
-import { playerUrl } from '../lib/url';
+import { playerUrl, queueUrl } from '../lib/url';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -141,6 +141,19 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   const row = h('div', HEADER, back, name, pencil);
 
   if (p.videos.length) {
+    const share = h('button', `rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, 'Share');
+    share.setAttribute('aria-label', 'Share playlist as YouTube link');
+    share.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(queueUrl(p.videos.map(v => v.id)));
+        share.textContent = '✓ Copied link';
+      } catch {
+        share.textContent = 'Copy failed';
+      }
+      setTimeout(() => { share.textContent = 'Share'; }, 1500);
+    });
+    row.append(share);
+
     const play = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '▶ Play all');
     play.addEventListener('click', () => void chrome.tabs.create({ url: playerUrl(p.videos[0].id, p.id) }));
     row.append(play);

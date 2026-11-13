@@ -7,6 +7,9 @@ export const playerUrl = (id: string, playlistId?: string) =>
   chrome.runtime.getURL(`${PLAYER_PAGE}?${new URLSearchParams(playlistId ? { v: id, pl: playlistId } : { v: id })}`);
 export const watchUrl = (id: string, start = 0) =>
   `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${start > 0 ? `&t=${Math.floor(start)}s` : ''}`;
+// watch_videos queues hold at most 50 videos, so longer playlists are truncated.
+export const queueUrl = (ids: string[]): string =>
+  'https://www.youtube.com/watch_videos?video_ids=' + ids.slice(0, 50).map(encodeURIComponent).join(',');
 export const thumbUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
 const LIST_RE = /^[A-Za-z0-9_-]{2,}$/;
