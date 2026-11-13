@@ -1,5 +1,5 @@
 # TubeList build report
-Model: 9router/cc/claude-opus-5-5   Date: 2026-11-13   Commit: 415e430
+Model: 9router/cc/claude-opus-5-5   Date: 2026-11-13   Commit: f5b2360
 
 ## Milestones
 | # | Status (PASS/FAIL/PARTIAL) | Notes |
@@ -61,5 +61,5 @@ $ vitest run
 
 ## Known issues / open questions
 - All browser-dependent checks are unverified here: this machine has no `google-chrome`/`chromium`/`brave` binary, so DNR Origin rewriting (step 11) and Referer/Error 153 behavior (step 8) remain unconfirmed. If they fail, apply §9 contingencies 1 and 2 in that order.
-- `fetchQueueIds` for `list=TL...` relies on `next`, which caps around 200 items (ponytail note in `src/innertube.ts`).
+- `fetchQueueIds` for `list=TL...` relies on `next`, which caps around 200 items (ponytail note in `src/lib/innertube.ts`).
 - Playlist re-save replaces the stored video list wholesale, so videos removed from the YouTube side disappear on re-save (intended by §7.3).
