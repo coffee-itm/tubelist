@@ -8,7 +8,7 @@ export default defineConfig({
     emptyOutDir: true,
     modulePreload: false,
     rollupOptions: {
-      input: { popup: 'popup.html', player: 'player.html', background: 'src/background.ts' },
+      input: { popup: 'popup.html', player: 'player.html', background: 'src/background.ts', frame: 'src/frame.ts' },
       output: {
         entryFileNames: '[name].js',
         chunkFileNames: 'chunks/[name]-[hash].js',

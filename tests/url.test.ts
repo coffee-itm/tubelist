@@ -1,4 +1,4 @@
-import { classifyUrl, playerUrl, embedUrl } from '../src/lib/url';
+import { classifyUrl, playerUrl, watchUrl } from '../src/lib/url';
 
 it.each([
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
@@ -23,6 +23,7 @@ it('builds player URLs', () => {
   expect(playerUrl('dQw4w9WgXcQ')).toBe('chrome-extension://test/player.html?v=dQw4w9WgXcQ');
 });
 
-it('builds embed URLs', () => {
-  expect(embedUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&rel=0&playsinline=1');
+it('builds watch URLs', () => {
+  expect(watchUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  expect(watchUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=125s');
 });

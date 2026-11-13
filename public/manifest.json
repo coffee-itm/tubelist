@@ -3,9 +3,10 @@
   "name": "TubeList",
   "version": "0.1.0",
   "description": "Save YouTube videos, playlists and queues into local playlists.",
-  "permissions": ["contextMenus", "storage", "declarativeNetRequestWithHostAccess"],
+  "permissions": ["contextMenus", "storage", "declarativeNetRequestWithHostAccess", "scripting", "activeTab"],
   "host_permissions": ["https://www.youtube.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
+  "content_scripts": [{ "matches": ["https://www.youtube.com/watch*"], "js": ["frame.js"], "all_frames": true, "run_at": "document_start" }],
   "action": {
     "default_popup": "popup.html",
     "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" }

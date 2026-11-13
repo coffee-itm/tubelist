@@ -1,6 +1,7 @@
 import '../styles.css';
 import { h } from '../lib/dom';
-import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist } from '../lib/store';
+import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist } from '../lib/store';
+import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
 import { playerUrl } from '../lib/url';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
@@ -18,9 +19,10 @@ const KIND: Record<PlaylistKind, [string, string]> = {
 
 async function render(): Promise<void> {
   const playlists = await getPlaylists();
+  const progress = await getProgress();
   const playlist = playlists.find(p => p.id === openId);
   if (openId && !playlist) openId = null;
-  app.replaceChildren(playlist ? detail(playlist) : list(playlists));
+  app.replaceChildren(playlist ? detail(playlist, progress) : list(playlists));
 }
 
 function logo(size: number, className = ''): HTMLImageElement {
@@ -34,11 +36,20 @@ function logo(size: number, className = ''): HTMLImageElement {
 
 function list(playlists: Playlist[]): HTMLElement {
   const root = h('div');
+  const create = h('button', `ml-auto rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '+ New playlist');
+  create.addEventListener('click', async () => {
+    const name = cleanName(prompt('Playlist name') ?? '', '');
+    if (!name) return;
+    const p = await savePlaylist({ name, kind: 'custom', sourceId: null, videos: [] });
+    openId = p.id;
+    void render();
+  });
   root.append(
     h('div', HEADER,
       logo(24),
       h('span', 'font-semibold', 'TubeList'),
-      h('span', 'ml-auto text-xs text-zinc-500', String(playlists.length)),
+      h('span', 'text-xs text-zinc-500', String(playlists.length)),
+      create,
     ),
   );
 
@@ -93,7 +104,7 @@ function list(playlists: Playlist[]): HTMLElement {
   return root;
 }
 
-function detail(p: Playlist): HTMLElement {
+function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   const root = h('div');
 
   const back = h('button', `rounded-lg p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '←');
@@ -103,9 +114,10 @@ function detail(p: Playlist): HTMLElement {
     void render();
   });
 
-  const name = h('input', `min-w-0 flex-1 rounded-md bg-transparent px-1 py-0.5 text-sm font-semibold outline-none focus:ring-2 focus:ring-red-500 ${FOCUS}`);
+  const name = h('input', `min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-1 py-0.5 text-sm font-semibold outline-none hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
   name.value = p.name;
   name.setAttribute('aria-label', 'Playlist name');
+  name.title = 'Click to rename';
   const commitName = async () => {
     const next = cleanName(name.value, p.name);
     name.value = next;
@@ -119,7 +131,14 @@ function detail(p: Playlist): HTMLElement {
     if (e.key === 'Enter') void commitName();
   });
 
-  const row = h('div', HEADER, back, name);
+  const pencil = h('button', `rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '✎');
+  pencil.setAttribute('aria-label', 'Rename playlist');
+  pencil.addEventListener('click', () => {
+    name.focus();
+    name.select();
+  });
+
+  const row = h('div', HEADER, back, name, pencil);
 
   if (p.videos.length) {
     const play = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '▶ Play all');
@@ -129,7 +148,7 @@ function detail(p: Playlist): HTMLElement {
 
   const del = h('button', `rounded-lg px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950 ${FOCUS}`, 'Delete');
   del.addEventListener('click', async () => {
-    if (!confirm(`Delete "${p.name}"?`)) return;
+    if (!confirm(`Delete playlist "${p.name}" and its ${p.videos.length} videos?`)) return;
     await deletePlaylist(p.id);
     openId = null;
     void render();
@@ -143,12 +162,12 @@ function detail(p: Playlist): HTMLElement {
   }
 
   const ul = h('ul', 'p-2 space-y-1');
-  for (const v of p.videos) ul.append(videoRow(p, v));
+  for (const v of p.videos) ul.append(videoRow(p, v, progress[v.id]));
   root.append(ul);
   return root;
 }
 
-function videoRow(p: Playlist, v: Video): HTMLElement {
+function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElement {
   const url = playerUrl(v.id, p.id);
   const a = h('a', `flex gap-3 rounded-xl p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`);
   a.href = url;
@@ -157,14 +176,15 @@ function videoRow(p: Playlist, v: Video): HTMLElement {
     void chrome.tabs.create({ url });
   });
 
-  const thumb = h('div', 'relative shrink-0');
-  const img = h('img', 'w-[120px] h-[68px] rounded-lg object-cover');
+  const thumb = h('div', 'relative shrink-0 overflow-hidden rounded-lg');
+  const img = h('img', 'w-[120px] h-[68px] object-cover');
   img.src = v.thumbnail;
   img.loading = 'lazy';
   img.alt = '';
   thumb.append(img);
   const duration = formatDuration(v.durationSec);
-  if (duration) thumb.append(h('span', 'absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
+  if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
+  thumb.append(...progressOverlay(prog));
 
   const published = formatPublished(v.publishedAt);
   const text = h('div', 'min-w-0 flex-1 pr-6',
@@ -176,18 +196,22 @@ function videoRow(p: Playlist, v: Video): HTMLElement {
 
   a.append(thumb, text);
 
-  const rm = h('button', `absolute right-2 top-2 rounded-md p-1 text-zinc-400 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 ${FOCUS}`, '×');
+  const rm = h('button', `absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-zinc-100 text-zinc-500 ring-1 ring-zinc-200 transition hover:bg-red-600 hover:text-white hover:ring-red-600 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 ${FOCUS}`);
   rm.setAttribute('aria-label', 'Remove from playlist');
+  rm.title = 'Remove from playlist';
+  rm.innerHTML =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 4h4v3h-4zM6.5 7l1 13h9l1-13M10.5 11v6M13.5 11v6"/></svg>';
   rm.addEventListener('click', async () => {
+    if (!confirm(`Remove "${v.title}" from "${p.name}"?`)) return;
     await removeVideo(p.id, v.id);
     void render();
   });
 
-  return h('li', 'vid group relative', a, rm);
+  return h('li', 'vid relative', a, rm);
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.playlists) void render();
+  if (area === 'local' && (changes.playlists || changes.progress)) void render();
 });
 
 void render();

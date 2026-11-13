@@ -2,7 +2,8 @@ import '../styles.css';
 import { h } from '../lib/dom';
 import { getPlaylists } from '../lib/store';
 import { formatDuration, formatPublished } from '../lib/format';
-import { embedUrl, VIDEO_ID_RE } from '../lib/url';
+import { watchUrl, VIDEO_ID_RE } from '../lib/url';
+import { getProgress, progressOverlay, setProgress, type Progress } from '../lib/progress';
 import type { Playlist, Video } from '../lib/types';
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
@@ -26,14 +27,23 @@ if (!initialId || !VIDEO_ID_RE.test(initialId)) {
 
 async function start(firstId: string): Promise<void> {
   const all = await getPlaylists();
+  const progress = await getProgress();
   const playlist = all.find(p => p.id === pl);
   const videoById = new Map<string, Video>();
   for (const p of all) for (const v of p.videos) if (!videoById.has(v.id)) videoById.set(v.id, v);
 
   const main = document.querySelector('main') as HTMLElement;
   const rows: HTMLButtonElement[] = [];
+  const thumbs = new Map<string, HTMLElement>();
   let heading: HTMLElement | null = null;
   let currentId = firstId;
+
+  const updateRowProgress = (id: string, p: Progress): void => {
+    const thumb = thumbs.get(id);
+    if (!thumb) return;
+    for (const el of thumb.querySelectorAll('[data-progress]')) el.remove();
+    thumb.append(...progressOverlay(p));
+  };
 
   if (playlist) {
     plNameEl.textContent = playlist.name;
@@ -42,14 +52,16 @@ async function start(firstId: string): Promise<void> {
 
     for (const v of playlist.videos) {
       const row = h('button', `w-full text-left flex gap-3 rounded-xl p-2 hover:bg-zinc-800 ${FOCUS}`);
-      const thumb = h('div', 'relative shrink-0');
-      const img = h('img', 'w-[120px] h-[68px] rounded-lg object-cover');
+      const thumb = h('div', 'relative shrink-0 overflow-hidden rounded-lg');
+      const img = h('img', 'w-[120px] h-[68px] object-cover');
       img.src = v.thumbnail;
       img.loading = 'lazy';
       img.alt = '';
       thumb.append(img);
       const duration = formatDuration(v.durationSec);
-      if (duration) thumb.append(h('span', 'absolute bottom-1 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
+      if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
+      thumb.append(...progressOverlay(progress[v.id]));
+      thumbs.set(v.id, thumb);
 
       const published = formatPublished(v.publishedAt);
       const text = h('div', 'min-w-0 flex-1',
@@ -67,9 +79,41 @@ async function start(firstId: string): Promise<void> {
     main.append(aside);
   }
 
+  let lastSave = 0;
+  let live = { t: 0, d: 0 };
+  const save = (ended: boolean): void => {
+    const id = currentId;
+    void setProgress(id, live.t, live.d, ended).then(p => {
+      if (!p) return;
+      progress[id] = p;
+      updateRowProgress(id, p);
+    });
+  };
+  window.addEventListener('message', e => {
+    if (e.origin !== 'https://www.youtube.com' || e.source !== iframe.contentWindow) return;
+    const m = e.data as { tubelist?: number; id?: string; t?: number; d?: number; state?: string } | null;
+    if (!m || m.tubelist !== 1 || m.id !== currentId) return; // id check drops YouTube's own SPA navigation to another video
+    if (typeof m.t === 'number') live.t = m.t;
+    if (typeof m.d === 'number' && Number.isFinite(m.d) && m.d > 0) live.d = m.d;
+    const ended = m.state === 'ended';
+    if (ended || m.state === 'pause' || Date.now() - lastSave > 5000) {
+      lastSave = Date.now();
+      save(ended);
+    }
+  });
+  // The player page is the "left off here" moment; hidden tab or unload.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') save(false);
+  });
+  window.addEventListener('pagehide', () => save(false));
+
   const show = (id: string): void => {
     currentId = id;
-    iframe.src = embedUrl(id);
+    live = { t: 0, d: 0 };
+    const stored = progress[id];
+    // ponytail: resume source is local progress; reading the account's resume position is not implemented.
+    const resumeAt = stored && !stored.done && stored.t > 3 ? stored.t : 0;
+    iframe.src = watchUrl(id, resumeAt);
     const video = videoById.get(id);
 
     if (video) {
