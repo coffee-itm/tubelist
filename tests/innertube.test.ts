@@ -1,14 +1,13 @@
-import { readFileSync } from 'node:fs';
 import { parsePlayer, parseBrowse, parseNext, mapPool, fetchPlaylistIds } from '../src/lib/innertube';
 import { VIDEO_ID_RE } from '../src/lib/url';
-
-const fixture = (name: string): unknown => JSON.parse(readFileSync(`tests/fixtures/${name}.json`, 'utf8'));
-
-const page1 = fixture('browse-page1');
-const last = fixture('browse-last');
+import playerOk from './fixtures/player-ok.json';
+import playerUnavailable from './fixtures/player-unavailable.json';
+import page1 from './fixtures/browse-page1.json';
+import last from './fixtures/browse-last.json';
+import nextQueue from './fixtures/next-queue.json';
 
 it('parses a playable video', () => {
-  const v = parsePlayer(fixture('player-ok'));
+  const v = parsePlayer(playerOk);
   expect(v?.id).toBe('dQw4w9WgXcQ');
   expect(v?.title).toContain('Never Gonna Give You Up');
   expect(v?.channel).toBe('Rick Astley');
@@ -17,7 +16,7 @@ it('parses a playable video', () => {
 });
 
 it('returns null for an unavailable video', () => {
-  expect(parsePlayer(fixture('player-unavailable'))).toBeNull();
+  expect(parsePlayer(playerUnavailable)).toBeNull();
 });
 
 it('parses playlist pages', () => {
@@ -30,7 +29,7 @@ it('parses playlist pages', () => {
 });
 
 it('parses a queue', () => {
-  expect(parseNext(fixture('next-queue')).ids).toEqual(['dQw4w9WgXcQ', '9bZkp7q19f0', 'kJQP7kiw5Fk']);
+  expect(parseNext(nextQueue).ids).toEqual(['dQw4w9WgXcQ', '9bZkp7q19f0', 'kJQP7kiw5Fk']);
 });
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
