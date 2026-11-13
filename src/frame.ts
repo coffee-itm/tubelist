@@ -17,9 +17,11 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
   document.addEventListener('fullscreenchange', () => window.dispatchEvent(new Event('resize')));
 
   // ponytail: no parent→frame commands; add a message listener if TubeList needs play/seek control.
+  let adTailUntil = 0; // the ad's own ended/pause must never be reported as the video's
   const report = (e: Event): void => {
     const v = e.target;
     if (!(v instanceof HTMLVideoElement)) return;
+    if (Date.now() < adTailUntil) return;
     if (document.getElementById('movie_player')?.classList.contains('ad-showing')) return; // preroll shares the <video>
     window.parent.postMessage(
       { tubelist: 1, id: new URLSearchParams(location.search).get('v'), t: v.currentTime, d: v.duration, state: e.type },
@@ -28,4 +30,15 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
   };
   // Media events don't bubble and <video> appears later, so capture on document.
   for (const type of ['timeupdate', 'pause', 'ended']) document.addEventListener(type, report, true);
+
+  // Ads arrive inside the same stream as the video, so there is no request a filter list can block:
+  // run each ad to its end instead, including the sequences YouTube sends as a single break.
+  setInterval((): void => {
+    const mp = document.getElementById('movie_player');
+    const v = document.querySelector('video');
+    if (!mp?.classList.contains('ad-showing') || !(v instanceof HTMLVideoElement)) return;
+    if (!Number.isFinite(v.duration) || v.duration - v.currentTime <= 0.2) return;
+    adTailUntil = Date.now() + 2000;
+    v.currentTime = v.duration;
+  }, 500);
 }
