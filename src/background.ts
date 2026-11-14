@@ -11,11 +11,13 @@ const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
     condition: { urlFilter: '|https://www.youtube.com/youtubei/', initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest'] },
   },
   {
-    // Watch page refuses framing; strip it only for frames this extension opens
+    // Watch page refuses framing. The extension opens the first frame; YouTube then reloads that
+    // same frame itself (`&themeRefresh=1&theme=dark`), so www.youtube.com must be an allowed
+    // initiator too — without it the reload is ERR_BLOCKED_BY_RESPONSE ("refused to connect").
     id: 3,
     priority: 1,
     action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }, { header: 'content-security-policy', operation: 'remove' }] },
-    condition: { requestDomains: ['www.youtube.com'], initiatorDomains: [chrome.runtime.id], resourceTypes: ['sub_frame'] },
+    condition: { requestDomains: ['www.youtube.com'], initiatorDomains: [chrome.runtime.id, 'www.youtube.com'], resourceTypes: ['sub_frame'] },
   },
 ];
 

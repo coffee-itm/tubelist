@@ -8,12 +8,13 @@ A lightweight browser extension (Manifest V3, Chromium) that turns YouTube video
 - **Plays sync with your account** — TubeList frames the actual `youtube.com/watch` page (signed in), so YouTube itself records watch history and the resume position.
 - **Progress bars & resume** — watched percentages on every thumbnail, auto-resume where you left off.
 - **Lite player chrome** — the watch page is trimmed to just the video player; no masthead, sidebar or comments.
+- **Resizable playlist sidebar** — drag the divider between the player and the playlist on desktop (or focus it and use ←/→); the width is remembered.
 - **Share a playlist** — the popup copies a YouTube `watch_videos` queue link for the playlist (first 50 videos); anyone can open it as a temporary YouTube playlist, and another TubeList user can right-click it → *Add to TubeList*.
 - **Local-first playlists** — playlists live in `chrome.storage.local`. No account, no server, nothing leaves your machine.
 
 ## How it works
 
-- The player page frames `https://www.youtube.com/watch?v=<id>` inside an iframe. A `declarativeNetRequest` rule strips `x-frame-options`/`content-security-policy` **only for frames the extension itself opens**, so the real player loads (with its cookies and history reporting intact).
+- The player page frames `https://www.youtube.com/watch?v=<id>` inside an iframe. A `declarativeNetRequest` rule strips `x-frame-options`/`content-security-policy` for `www.youtube.com` frames started by the extension **or by YouTube itself** — the player page reloads its own frame once (`&themeRefresh=1&theme=dark`) to sync the theme, and that reload is refused otherwise. The real player then loads with its cookies and history reporting intact.
 - A small content script (`src/frame.ts`) hides YouTube's page chrome inside the frame and reports `timeupdate`/`pause`/`ended` back to the player page for progress tracking.
 - Metadata, playlist contents and queue expansion come from YouTube's InnerTube API (`src/lib/innertube.ts`) using the `WEB` client, with the `Origin` header rewritten for extension pages.
 

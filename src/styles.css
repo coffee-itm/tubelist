@@ -1,2 +1,6 @@
 @import "tailwindcss";
 :root { color-scheme: light dark; }
+/* Player column, resize handle, playlist column (--plw set by the drag handle). */
+@media (width >= 64rem) {
+  main { grid-template-columns: minmax(0, 1fr) auto var(--plw, 380px); }
+}

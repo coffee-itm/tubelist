@@ -49,6 +49,7 @@ async function start(firstId: string): Promise<void> {
     plNameEl.textContent = playlist.name;
     heading = h('h2', 'px-2 py-2 text-sm font-semibold');
     const aside = h('aside', 'lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto rounded-2xl bg-zinc-900 p-2', heading);
+    main.append(resizer(main, aside), aside);
 
     for (const v of playlist.videos) {
       const row = h('button', `w-full text-left flex gap-3 rounded-xl p-2 hover:bg-zinc-800 ${FOCUS}`);
@@ -76,7 +77,6 @@ async function start(firstId: string): Promise<void> {
       rows.push(row);
       aside.append(row);
     }
-    main.append(aside);
   }
 
   let lastSave = 0;
@@ -118,7 +118,7 @@ async function start(firstId: string): Promise<void> {
 
     if (video) {
       titleEl.textContent = video.title;
-      metaEl.textContent = [video.channel, formatPublished(video.publishedAt), formatDuration(video.durationSec)].filter(Boolean).join(' · ');
+      metaEl.textContent = [video.channel, formatPublished(video.publishedAt)].filter(Boolean).join(' · ');
       document.title = `${video.title} — TubeList`;
     } else {
       titleEl.textContent = id;
@@ -155,4 +155,56 @@ async function start(firstId: string): Promise<void> {
   });
 
   show(firstId);
+}
+
+/** Drag/splitter handle between the player and the playlist column; width persists as `plw`. */
+function resizer(main: HTMLElement, aside: HTMLElement): HTMLElement {
+  const MIN = 260;
+  const handle = h('div', `hidden lg:block -mx-2.5 w-1.5 self-stretch cursor-col-resize rounded-full bg-zinc-800 hover:bg-red-500/70 active:bg-red-500 ${FOCUS}`);
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  handle.setAttribute('aria-label', 'Resize playlist sidebar');
+  handle.tabIndex = 0;
+
+  const apply = (w: number): void => {
+    const px = Math.round(Math.min(Math.max(main.clientWidth - 320, MIN), Math.max(w, MIN)));
+    main.style.setProperty('--plw', `${px}px`);
+    handle.setAttribute('aria-valuenow', String(px));
+    handle.setAttribute('aria-valuemin', String(MIN));
+    handle.setAttribute('aria-valuemax', String(Math.max(main.clientWidth - 320, MIN)));
+  };
+  const persist = (): void => localStorage.setItem('plw', main.style.getPropertyValue('--plw'));
+  const width = (): number => aside.getBoundingClientRect().width;
+
+  const stored = parseFloat(localStorage.getItem('plw') ?? '');
+  if (stored) apply(stored);
+
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    // The player is a cross-origin iframe, so a drag that crosses it would send its moves there
+    // instead of here (pointer capture does not retarget across it). A shield over the viewport
+    // keeps every move on this document.
+    const shield = h('div', 'fixed inset-0 z-50 cursor-col-resize touch-none');
+    document.body.append(shield);
+    const startX = e.clientX;
+    const startW = width(); // delta-based: matches the pointer exactly, no jump on the first move
+    const move = (ev: PointerEvent): void => apply(startW + startX - ev.clientX);
+    const end = (): void => {
+      shield.remove();
+      persist();
+    };
+    shield.addEventListener('pointermove', move);
+    shield.addEventListener('pointerup', end, { once: true });
+    shield.addEventListener('pointercancel', end, { once: true });
+  });
+  // A saved width can exceed the container after the window narrows; re-clamp it.
+  window.addEventListener('resize', () => apply(width()));
+  handle.addEventListener('keydown', e => {
+    const delta = e.key === 'ArrowLeft' ? 16 : e.key === 'ArrowRight' ? -16 : 0;
+    if (!delta) return;
+    e.preventDefault();
+    apply(width() + delta);
+    persist();
+  });
+  return handle;
 }
