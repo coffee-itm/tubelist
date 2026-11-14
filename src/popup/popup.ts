@@ -3,7 +3,8 @@ import { h } from '../lib/dom';
 import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist } from '../lib/store';
 import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
-import { playerUrl, queueUrl } from '../lib/url';
+import { playerUrl, queueUrl, classifyUrl } from '../lib/url';
+import { saveLink, type SaveTarget } from '../lib/save';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -16,6 +17,47 @@ const KIND: Record<PlaylistKind, [string, string]> = {
   youtube: ['YouTube', 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300'],
   queue: ['Queue', 'bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-300'],
 };
+
+// Built once: the bar is re-appended on every render, so typing survives a storage change.
+const linkInput = h('input', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+linkInput.type = 'text';
+linkInput.placeholder = 'Paste a video or playlist link';
+linkInput.setAttribute('aria-label', 'YouTube video or playlist link');
+
+const addStatus = h('p', 'mt-1 text-xs');
+const clearStatus = () => { addStatus.textContent = ''; };
+const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`, 'Add');
+const addBar = h('div', 'border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+  h('div', 'flex items-center gap-2', linkInput, addButton),
+  addStatus,
+);
+
+async function addLink(): Promise<void> {
+  const raw = linkInput.value.trim();
+  if (!raw || addButton.disabled) return;
+  const open = (await getPlaylists()).find(p => p.id === openId);
+  const target: SaveTarget = open ? { kind: 'playlist', playlistId: open.id, name: open.name } : { kind: 'saved' };
+  const say = (text: string, color: string) => {
+    addStatus.className = `mt-1 text-xs ${color}`;
+    addStatus.textContent = text;
+  };
+  addButton.disabled = true;
+  say(`Saving to ${open ? open.name : 'Saved'}…`, 'text-zinc-500');
+  try {
+    const message = await saveLink(classifyUrl(raw), target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500'));
+    linkInput.value = '';
+    say(message, 'text-green-600 dark:text-green-400');
+    void render();
+  } catch (err) {
+    const text = err instanceof Error ? err.message : String(err);
+    say(text.includes('HTTP 400') ? 'Playlist not found or private' : text, 'text-red-600 dark:text-red-400');
+  }
+  addButton.disabled = false;
+}
+addButton.addEventListener('click', () => void addLink());
+linkInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') void addLink();
+});
 
 async function render(): Promise<void> {
   const playlists = await getPlaylists();
@@ -41,6 +83,7 @@ function list(playlists: Playlist[]): HTMLElement {
     const name = cleanName(prompt('Playlist name') ?? '', '');
     if (!name) return;
     const p = await savePlaylist({ name, kind: 'custom', sourceId: null, videos: [] });
+    clearStatus();
     openId = p.id;
     void render();
   });
@@ -51,6 +94,7 @@ function list(playlists: Playlist[]): HTMLElement {
       h('span', 'text-xs text-zinc-500', String(playlists.length)),
       create,
     ),
+    addBar,
   );
 
   if (playlists.length === 0) {
@@ -71,6 +115,7 @@ function list(playlists: Playlist[]): HTMLElement {
   for (const p of playlists) {
     const btn = h('button', `pl w-full flex items-center gap-3 rounded-xl p-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition ${FOCUS}`);
     btn.addEventListener('click', () => {
+      clearStatus();
       openId = p.id;
       void render();
     });
@@ -110,6 +155,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   const back = h('button', `rounded-lg p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '←');
   back.setAttribute('aria-label', 'Back');
   back.addEventListener('click', () => {
+    clearStatus();
     openId = null;
     void render();
   });
@@ -167,7 +213,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
     void render();
   });
   row.append(del);
-  root.append(row);
+  root.append(row, addBar);
 
   if (p.videos.length === 0) {
     root.append(h('p', 'p-8 text-center text-sm text-zinc-500', 'This playlist is empty.'));

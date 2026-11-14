@@ -1,6 +1,6 @@
 import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
-import { fetchPlaylistIds, fetchQueueIds, fetchVideo, fetchVideos } from './lib/innertube';
-import { addToSaved, addVideo, cleanName, findBySourceId, getPlaylists, savePlaylist, SAVED_SOURCE_ID } from './lib/store';
+import { cleanName, getPlaylists, SAVED_SOURCE_ID } from './lib/store';
+import { saveLink, type SaveTarget } from './lib/save';
 
 const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
   {
@@ -89,49 +89,34 @@ async function askName(tabId: number | undefined): Promise<string | null | undef
 async function handleClick(info: chrome.contextMenus.OnClickData, tabId: number | undefined): Promise<void> {
   const link = classifyUrl(info.linkUrl ?? '');
   if (link.type === 'invalid') return flash('!', 'Not a YouTube video/playlist link');
+
   const menuId = String(info.menuItemId);
-  let newName: string | null = null;
+  let target: SaveTarget;
   if (menuId === 'new') {
     const raw = await askName(tabId);
     if (raw === undefined) return flash('!', 'Cannot ask for a name on this page; create the playlist in the TubeList popup');
     if (raw === null) return; // cancelled
-    newName = cleanName(raw, '');
-    if (!newName) return;
+    const name = cleanName(raw, '');
+    if (!name) return;
+    target = { kind: 'new', name };
+  } else if (menuId === 'pl:saved') {
+    target = { kind: 'saved' };
+  } else {
+    const playlistId = menuId.slice(3); // 'pl:<uuid>'
+    const name = (await getPlaylists()).find(p => p.id === playlistId)?.name;
+    if (!name) return flash('!', 'Playlist no longer exists');
+    target = { kind: 'playlist', playlistId, name };
   }
-  try {
-    const videoId = link.type === 'queue' ? null : link.videoId;
-    if (videoId) {
-      const v = await fetchVideo(videoId);
-      if (!v) return flash('!', 'Video unavailable');
-      const video = { ...v, addedAt: Date.now() };
-      if (newName !== null) {
-        await savePlaylist({ name: newName, kind: 'custom', sourceId: null, videos: [video] });
-        return flash('✓', `Added to ${newName}: ${v.title}`);
-      }
-      if (menuId === 'pl:saved') {
-        const r = await addToSaved(video);
-        const name = (await findBySourceId(SAVED_SOURCE_ID))?.name ?? 'Saved';
-        return flash(r === 'added' ? '✓' : '=', `${r === 'added' ? 'Added to' : 'Already in'} ${name}: ${v.title}`);
-      }
-      const targetId = menuId.slice(3); // 'pl:<uuid>'
-      const name = (await getPlaylists()).find(p => p.id === targetId)?.name;
-      if (!name) return flash('!', 'Playlist no longer exists');
-      const r = await addVideo(targetId, video);
-      return flash(r === 'added' ? '✓' : '=', `${r === 'added' ? 'Added to' : 'Already in'} ${name}: ${v.title}`);
-    }
-    if (link.type === 'video') return; // unreachable: video links always carry an id; narrows link to playlist | queue
+
+  if (link.type !== 'video') {
     chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
     chrome.action.setBadgeText({ text: '...' });
-    const isQueue = link.type === 'queue';
-    const { title, ids } = isQueue ? { title: null, ids: await fetchQueueIds(link) } : await fetchPlaylistIds(link.listId);
-    if (ids.length === 0) return flash('!', 'No videos found in this link');
-    const videos = await fetchVideos(ids, (done, total) => chrome.action.setBadgeText({ text: `${Math.floor((done / total) * 100)}%` }));
-    if (videos.length === 0) return flash('!', 'None of the videos are available');
-    const sourceId = link.listId;
-    const existing = sourceId ? await findBySourceId(sourceId) : undefined;
-    const name = newName ?? existing?.name ?? (isQueue ? 'Queue ' + new Date().toLocaleString() : (title ?? 'YouTube playlist'));
-    await savePlaylist({ name, kind: isQueue ? 'queue' : 'youtube', sourceId, videos });
-    flash('✓', `Saved ${videos.length} videos to ${name}`);
+  }
+  try {
+    const message = await saveLink(link, target, (done, total) =>
+      chrome.action.setBadgeText({ text: `${Math.floor((done / total) * 100)}%` }),
+    );
+    flash('✓', message);
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err);
     flash('!', text.includes('HTTP 400') ? 'Playlist not found or private' : text);
