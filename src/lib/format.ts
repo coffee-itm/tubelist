@@ -9,7 +9,7 @@ export function formatDuration(sec: number | null): string {
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ['year', 365 * 86400000],
-  ['month', 30 * 86400000],
+  ['month', (365 / 12) * 86400000], // YouTube's month, not 30 days: the 30-day one labels a 121-day-old video "4 months ago" while YouTube says 3
   ['week', 7 * 86400000],
   ['day', 86400000],
   ['hour', 3600000],
@@ -21,7 +21,11 @@ export function formatPublished(iso: string | null, now = Date.now()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return '';
   const diff = t - now;
-  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  for (const [unit, ms] of UNITS) if (Math.abs(diff) >= ms) return rtf.format(Math.round(diff / ms), unit);
+  // Truncated, never rounded, and always "1 month ago" rather than "last month": YouTube's own wording.
+  const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'always' });
+  for (const [unit, ms] of UNITS) {
+    const n = Math.trunc(diff / ms);
+    if (n) return rtf.format(n, unit);
+  }
   return 'just now';
 }
