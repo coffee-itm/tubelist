@@ -5,6 +5,7 @@ import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
 import { playerUrl, queueUrl, classifyUrl } from '../lib/url';
 import { saveLink, type SaveTarget } from '../lib/save';
+import { askConfirm, askText } from './dialog';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -19,17 +20,23 @@ const KIND: Record<PlaylistKind, [string, string]> = {
 };
 
 // Built once: the bar is re-appended on every render, so typing survives a storage change.
-const linkInput = h('input', `w-full rounded-lg border border-zinc-300 bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+const linkInput = h('input', `w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-zinc-500 hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 dark:placeholder:text-zinc-400 ${FOCUS}`);
 linkInput.type = 'text';
 linkInput.id = 'tl-link';
-linkInput.placeholder = 'paste link';
+linkInput.placeholder = 'Paste a video or playlist link';
+linkInput.autocomplete = 'off';
+linkInput.spellcheck = false;
 
 const linkLabel = h('label', 'sr-only', 'YouTube video or playlist link');
 linkLabel.htmlFor = linkInput.id;
 
 const addStatus = h('p', 'text-xs');
 addStatus.setAttribute('role', 'status');
-const clearStatus = () => { addStatus.textContent = ''; };
+addStatus.hidden = true;
+const clearStatus = () => {
+  addStatus.textContent = '';
+  addStatus.hidden = true;
+};
 const SAVED = 'saved';
 
 function option(value: string, label: string): HTMLOptionElement {
@@ -38,9 +45,14 @@ function option(value: string, label: string): HTMLOptionElement {
   return el;
 }
 
-const targetSelect = h('select', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+const targetSelect = h('select', `w-full appearance-none truncate rounded-lg border border-zinc-300 bg-white py-2 pl-3 pr-8 text-sm outline-none transition-colors hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 dark:bg-zinc-900 ${FOCUS}`);
 targetSelect.setAttribute('aria-label', 'Playlist to save into');
 targetSelect.title = 'Where a pasted video goes';
+
+const chevron = h('span', 'pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400');
+chevron.innerHTML =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const targetWrap = h('div', 'relative min-w-0 flex-1', targetSelect, chevron);
 
 /** Rebuilds the options from storage, keeping the current choice when it still exists. */
 function syncTargets(playlists: Playlist[]): void {
@@ -53,11 +65,11 @@ function syncTargets(playlists: Playlist[]): void {
   else targetSelect.value = wanted;
 }
 
-const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`, 'add');
-const addBar = h('div', 'space-y-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 active:bg-red-800 disabled:opacity-50 ${FOCUS}`, 'Add');
+const addBar = h('div', 'space-y-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800',
   linkLabel,
   linkInput,
-  h('div', 'flex items-center gap-2', targetSelect, addButton),
+  h('div', 'flex items-center gap-2', targetWrap, addButton),
   addStatus,
 );
 
@@ -68,8 +80,9 @@ async function addLink(): Promise<void> {
   const target: SaveTarget = picked ? { kind: 'playlist', playlistId: picked.id, name: picked.name } : { kind: 'saved' };
   const where = picked?.name ?? 'Saved';
   const say = (text: string, color: string) => {
-    addStatus.className = `mt-1 text-xs ${color}`;
+    addStatus.className = `text-xs ${color}`;
     addStatus.textContent = text;
+    addStatus.hidden = false;
   };
   addButton.disabled = true;
   addButton.setAttribute('aria-busy', 'true');
@@ -111,9 +124,9 @@ function logo(size: number, className = ''): HTMLImageElement {
 
 function list(playlists: Playlist[]): HTMLElement {
   const root = h('div');
-  const create = h('button', `ml-auto rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '+ New playlist');
+  const create = h('button', `ml-auto rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-red-700 active:bg-red-800 ${FOCUS}`, '+ New playlist');
   create.addEventListener('click', async () => {
-    const name = cleanName(prompt('Playlist name') ?? '', '');
+    const name = cleanName((await askText({ title: 'New playlist', label: 'Name', confirm: 'Create' })) ?? '', '');
     if (!name) return;
     const p = await savePlaylist({ name, kind: 'custom', sourceId: null, videos: [] });
     clearStatus();
@@ -243,7 +256,12 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
 
   const del = h('button', `rounded-lg px-2 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950 ${FOCUS}`, 'Delete');
   del.addEventListener('click', async () => {
-    if (!confirm(`Delete playlist "${p.name}" and its ${p.videos.length} videos?`)) return;
+    const ok = await askConfirm({
+      title: 'Delete playlist?',
+      body: `"${p.name}" and its ${p.videos.length} videos are removed from this browser.`,
+      confirm: 'Delete',
+    });
+    if (!ok) return;
     await deletePlaylist(p.id);
     openId = null;
     void render();
@@ -297,7 +315,12 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
   rm.innerHTML =
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 4h4v3h-4zM6.5 7l1 13h9l1-13M10.5 11v6M13.5 11v6"/></svg>';
   rm.addEventListener('click', async () => {
-    if (!confirm(`Remove "${v.title}" from "${p.name}"?`)) return;
+    const ok = await askConfirm({
+      title: 'Remove video?',
+      body: `"${v.title}" leaves "${p.name}".`,
+      confirm: 'Remove',
+    });
+    if (!ok) return;
     await removeVideo(p.id, v.id);
     void render();
   });
