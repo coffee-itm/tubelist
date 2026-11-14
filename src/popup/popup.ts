@@ -1,6 +1,6 @@
 import '../styles.css';
 import { h } from '../lib/dom';
-import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist } from '../lib/store';
+import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist, SAVED_SOURCE_ID } from '../lib/store';
 import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
 import { playerUrl, queueUrl, classifyUrl } from '../lib/url';
@@ -26,23 +26,48 @@ linkInput.setAttribute('aria-label', 'YouTube video or playlist link');
 
 const addStatus = h('p', 'mt-1 text-xs');
 const clearStatus = () => { addStatus.textContent = ''; };
+const SAVED = 'saved';
+
+function option(value: string, label: string): HTMLOptionElement {
+  const el = h('option', '', label);
+  el.value = value;
+  return el;
+}
+
+const targetSelect = h('select', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+targetSelect.setAttribute('aria-label', 'Playlist to save into');
+targetSelect.title = 'Where a pasted video goes';
+
+/** Rebuilds the options from storage, keeping the current choice when it still exists. */
+function syncTargets(playlists: Playlist[]): void {
+  const wanted = targetSelect.value || openId || SAVED;
+  targetSelect.replaceChildren(
+    option(SAVED, 'Saved'),
+    ...playlists.filter(p => p.sourceId !== SAVED_SOURCE_ID).map(p => option(p.id, p.name)),
+  );
+  if (![...targetSelect.options].some(o => o.value === wanted)) targetSelect.value = SAVED;
+  else targetSelect.value = wanted;
+}
+
 const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`, 'Add');
 const addBar = h('div', 'border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
   h('div', 'flex items-center gap-2', linkInput, addButton),
+  h('div', 'mt-2 flex items-center gap-2', h('span', 'shrink-0 text-xs text-zinc-500', 'Save to'), targetSelect),
   addStatus,
 );
 
 async function addLink(): Promise<void> {
   const raw = linkInput.value.trim();
   if (!raw || addButton.disabled) return;
-  const open = (await getPlaylists()).find(p => p.id === openId);
-  const target: SaveTarget = open ? { kind: 'playlist', playlistId: open.id, name: open.name } : { kind: 'saved' };
+  const picked = (await getPlaylists()).find(p => p.id === targetSelect.value);
+  const target: SaveTarget = picked ? { kind: 'playlist', playlistId: picked.id, name: picked.name } : { kind: 'saved' };
+  const where = picked?.name ?? 'Saved';
   const say = (text: string, color: string) => {
     addStatus.className = `mt-1 text-xs ${color}`;
     addStatus.textContent = text;
   };
   addButton.disabled = true;
-  say(`Saving to ${open ? open.name : 'Saved'}…`, 'text-zinc-500');
+  say(`Saving to ${where}...`, 'text-zinc-500');
   try {
     const message = await saveLink(classifyUrl(raw), target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500'));
     linkInput.value = '';
@@ -61,6 +86,7 @@ linkInput.addEventListener('keydown', e => {
 
 async function render(): Promise<void> {
   const playlists = await getPlaylists();
+  syncTargets(playlists);
   const progress = await getProgress();
   const playlist = playlists.find(p => p.id === openId);
   if (openId && !playlist) openId = null;
@@ -85,6 +111,7 @@ function list(playlists: Playlist[]): HTMLElement {
     const p = await savePlaylist({ name, kind: 'custom', sourceId: null, videos: [] });
     clearStatus();
     openId = p.id;
+    targetSelect.value = p.id;
     void render();
   });
   root.append(
@@ -117,6 +144,7 @@ function list(playlists: Playlist[]): HTMLElement {
     btn.addEventListener('click', () => {
       clearStatus();
       openId = p.id;
+      targetSelect.value = p.id;
       void render();
     });
 
@@ -157,6 +185,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   back.addEventListener('click', () => {
     clearStatus();
     openId = null;
+    targetSelect.value = SAVED;
     void render();
   });
 

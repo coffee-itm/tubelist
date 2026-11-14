@@ -5,7 +5,7 @@ A lightweight browser extension (Manifest V3, Chromium) that turns YouTube video
 ## Features
 
 - **Save anything** — right-click any YouTube video, playlist or `watch_videos` queue link → *Add to TubeList*. Pick an existing playlist or create a new one.
-- **Or paste a link** — the popup has a link field: a video link goes to *Saved*, or to the playlist you have open; a playlist or queue link is saved as its own playlist.
+- **Or paste a link** — the popup has a link field: a video link goes to the playlist picked under *Save to* (it follows the playlist you open, default *Saved*); a playlist or queue link is saved as its own playlist.
 - **Plays sync with your account** — TubeList frames the actual `youtube.com/watch` page (signed in), so YouTube itself records watch history and the resume position.
 - **Progress bars & resume** — watched percentages on every thumbnail, auto-resume where you left off.
 - **Lite player chrome** — the watch page is trimmed to just the video player; no masthead, sidebar or comments.
