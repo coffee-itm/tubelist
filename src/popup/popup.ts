@@ -19,12 +19,16 @@ const KIND: Record<PlaylistKind, [string, string]> = {
 };
 
 // Built once: the bar is re-appended on every render, so typing survives a storage change.
-const linkInput = h('input', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+const linkInput = h('input', `w-full rounded-lg border border-zinc-300 bg-transparent px-2.5 py-2 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
 linkInput.type = 'text';
-linkInput.placeholder = 'Paste a video or playlist link';
-linkInput.setAttribute('aria-label', 'YouTube video or playlist link');
+linkInput.id = 'tl-link';
+linkInput.placeholder = 'paste link';
 
-const addStatus = h('p', 'mt-1 text-xs');
+const linkLabel = h('label', 'sr-only', 'YouTube video or playlist link');
+linkLabel.htmlFor = linkInput.id;
+
+const addStatus = h('p', 'text-xs');
+addStatus.setAttribute('role', 'status');
 const clearStatus = () => { addStatus.textContent = ''; };
 const SAVED = 'saved';
 
@@ -34,7 +38,7 @@ function option(value: string, label: string): HTMLOptionElement {
   return el;
 }
 
-const targetSelect = h('select', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-1.5 py-1 text-xs outline-none focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
+const targetSelect = h('select', `min-w-0 flex-1 rounded-lg border border-zinc-300 bg-transparent px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
 targetSelect.setAttribute('aria-label', 'Playlist to save into');
 targetSelect.title = 'Where a pasted video goes';
 
@@ -49,10 +53,11 @@ function syncTargets(playlists: Playlist[]): void {
   else targetSelect.value = wanted;
 }
 
-const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`, 'Add');
-const addBar = h('div', 'border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
-  h('div', 'flex items-center gap-2', linkInput, addButton),
-  h('div', 'mt-2 flex items-center gap-2', h('span', 'shrink-0 text-xs text-zinc-500', 'Save to'), targetSelect),
+const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 ${FOCUS}`, 'add');
+const addBar = h('div', 'space-y-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+  linkLabel,
+  linkInput,
+  h('div', 'flex items-center gap-2', targetSelect, addButton),
   addStatus,
 );
 
@@ -67,17 +72,19 @@ async function addLink(): Promise<void> {
     addStatus.textContent = text;
   };
   addButton.disabled = true;
-  say(`Saving to ${where}...`, 'text-zinc-500');
+  addButton.setAttribute('aria-busy', 'true');
+  say(`Saving to ${where}...`, 'text-zinc-500 dark:text-zinc-400');
   try {
-    const message = await saveLink(classifyUrl(raw), target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500'));
+    const message = await saveLink(classifyUrl(raw), target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500 dark:text-zinc-400'));
     linkInput.value = '';
-    say(message, 'text-green-600 dark:text-green-400');
+    say(message, 'text-green-700 dark:text-green-400');
     void render();
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err);
     say(text.includes('HTTP 400') ? 'Playlist not found or private' : text, 'text-red-600 dark:text-red-400');
   }
   addButton.disabled = false;
+  addButton.removeAttribute('aria-busy');
 }
 addButton.addEventListener('click', () => void addLink());
 linkInput.addEventListener('keydown', e => {
@@ -118,7 +125,7 @@ function list(playlists: Playlist[]): HTMLElement {
     h('div', HEADER,
       logo(24),
       h('span', 'font-semibold', 'TubeList'),
-      h('span', 'text-xs text-zinc-500', String(playlists.length)),
+      h('span', 'text-xs text-zinc-500 dark:text-zinc-400', String(playlists.length)),
       create,
     ),
     addBar,
@@ -126,7 +133,7 @@ function list(playlists: Playlist[]): HTMLElement {
 
   if (playlists.length === 0) {
     root.append(
-      h('p', 'p-8 text-center text-sm text-zinc-500',
+      h('p', 'p-8 text-center text-sm text-zinc-500 dark:text-zinc-400',
         logo(48, 'opacity-80 mx-auto mb-3'),
         'No playlists yet.',
         h('br'),
@@ -167,7 +174,7 @@ function list(playlists: Playlist[]): HTMLElement {
       thumb,
       h('div', 'min-w-0 flex-1',
         h('div', 'truncate text-sm font-medium', p.name),
-        h('div', 'text-xs text-zinc-500', `${p.videos.length} videos · ${formatDuration(total)}`),
+        h('div', 'text-xs text-zinc-500 dark:text-zinc-400', `${p.videos.length} videos · ${formatDuration(total)}`),
       ),
       h('span', `shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${colors}`, label),
     );
@@ -206,7 +213,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
     if (e.key === 'Enter') void commitName();
   });
 
-  const pencil = h('button', `rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '✎');
+  const pencil = h('button', `rounded-md p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '✎');
   pencil.setAttribute('aria-label', 'Rename playlist');
   pencil.addEventListener('click', () => {
     name.focus();
@@ -216,7 +223,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   const row = h('div', HEADER, back, name, pencil);
 
   if (p.videos.length) {
-    const share = h('button', `rounded-md p-1 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, 'Share');
+    const share = h('button', `rounded-md p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, 'Share');
     share.setAttribute('aria-label', 'Share playlist as YouTube link');
     share.addEventListener('click', async () => {
       try {
@@ -245,7 +252,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   root.append(row, addBar);
 
   if (p.videos.length === 0) {
-    root.append(h('p', 'p-8 text-center text-sm text-zinc-500', 'This playlist is empty.'));
+    root.append(h('p', 'p-8 text-center text-sm text-zinc-500 dark:text-zinc-400', 'This playlist is empty.'));
     return root;
   }
 
@@ -277,8 +284,8 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
   const published = formatPublished(v.publishedAt);
   const text = h('div', 'min-w-0 flex-1 pr-6',
     h('div', 'line-clamp-2 text-sm font-medium leading-snug', v.title),
-    h('div', 'mt-0.5 truncate text-xs text-zinc-500', v.channel),
-    h('div', 'text-xs text-zinc-500', published),
+    h('div', 'mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400', v.channel),
+    h('div', 'text-xs text-zinc-500 dark:text-zinc-400', published),
   );
   if (v.publishedAt) text.lastElementChild!.setAttribute('title', new Date(v.publishedAt).toLocaleDateString());
 
