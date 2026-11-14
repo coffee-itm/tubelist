@@ -1,4 +1,4 @@
-import type { Playlist, PlaylistKind, Video } from './types';
+import type { Playlist, PlaylistKind, SkipPrefs, Video } from './types';
 
 const KEY = 'playlists';
 
@@ -83,6 +83,44 @@ export async function renamePlaylist(playlistId: string, name: string): Promise<
 export async function deletePlaylist(playlistId: string): Promise<void> {
   const playlists = await read();
   await write(playlists.filter(x => x.id !== playlistId));
+}
+
+// SponsorBlock: the frame reads the raw object and filters on `prefs[category]`, so it never holds this list.
+const SKIP_KEY = 'skipPrefs';
+
+export const SKIP_OPTIONS: { id: string; label: string }[] = [
+  { id: 'sponsor', label: 'Skip sponsors' },
+  { id: 'selfpromo', label: 'Skip self-promotion' },
+  { id: 'interaction', label: 'Skip engagement reminders' },
+  { id: 'intro', label: 'Skip intros' },
+  { id: 'outro', label: 'Skip outros' },
+  { id: 'preview', label: 'Skip previews' },
+  { id: 'music_offtopic', label: 'Skip non-music sections' },
+  { id: 'filler', label: 'Skip off-topic sections' },
+  { id: 'poi_highlight', label: 'Skip highlights' },
+  { id: 'countdown', label: 'Sponsor skip countdown' },
+];
+
+export const DEFAULT_SKIP_PREFS: SkipPrefs = {
+  categories: Object.fromEntries(SKIP_OPTIONS.filter(o => o.id !== 'countdown').map(o => [o.id, true])),
+  countdown: true,
+};
+
+/** Merges over the defaults, so a row added later reads as enabled without a migration. */
+export async function getSkipPrefs(): Promise<SkipPrefs> {
+  const res = await chrome.storage.local.get(SKIP_KEY);
+  const saved = res[SKIP_KEY] as Partial<SkipPrefs> | undefined;
+  return { categories: { ...DEFAULT_SKIP_PREFS.categories, ...saved?.categories }, countdown: saved?.countdown ?? true };
+}
+
+export async function setSkipPrefs(p: SkipPrefs): Promise<void> {
+  await chrome.storage.local.set({ [SKIP_KEY]: p });
+}
+
+/** Writes the defaults once: the framed player reads the raw object and needs the category list to exist. */
+export async function ensureSkipPrefs(): Promise<void> {
+  const res = await chrome.storage.local.get(SKIP_KEY);
+  if (!res[SKIP_KEY]) await setSkipPrefs(DEFAULT_SKIP_PREFS);
 }
 
 export function cleanName(raw: string, fallback: string): string {

@@ -19,6 +19,12 @@ export interface Playlist {
   videos: Video[];
 }
 
+/** SponsorBlock preferences (chrome.storage.local key `skipPrefs`). */
+export interface SkipPrefs {
+  categories: Record<string, boolean>; // SponsorBlock category id → enabled
+  countdown: boolean;
+}
+
 export type LinkInfo =
   | { type: 'video'; videoId: string }
   | { type: 'playlist'; listId: string; videoId: string | null }

@@ -1,5 +1,5 @@
 import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
-import { cleanName, getPlaylists, SAVED_SOURCE_ID } from './lib/store';
+import { cleanName, ensureSkipPrefs, getPlaylists, SAVED_SOURCE_ID } from './lib/store';
 import { saveLink, type SaveTarget } from './lib/save';
 
 const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
@@ -24,6 +24,24 @@ const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
 async function installRules(): Promise<void> {
   await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2, 3], addRules: HEADER_RULES });
 }
+
+// The framed watch page's CSP applies to content-script fetches ("Unsafe attempt to load URL … Domains,
+// protocols and ports must match"), so the SponsorBlock lookup runs here, where no page policy exists.
+// The response shape stays raw: the frame does its own filtering and mapping.
+const SB_API = 'https://sponsor.ajay.app/api/skipSegments/';
+const SB_ACTIONS = JSON.stringify(['skip', 'poi']);
+
+type SegmentsRequest = { type: 'sb:segments'; prefix: string; categories: string[] };
+
+chrome.runtime.onMessage.addListener((msg: SegmentsRequest, _sender, respond: (r: unknown) => void) => {
+  if (msg?.type !== 'sb:segments') return;
+  const query = `?categories=${encodeURIComponent(JSON.stringify(msg.categories))}&actionTypes=${encodeURIComponent(SB_ACTIONS)}`;
+  fetch(SB_API + msg.prefix + query)
+    .then(r => (r.ok ? r.json() : []))
+    .then(data => respond(Array.isArray(data) ? data : []))
+    .catch(() => respond([]));
+  return true; // respond asynchronously
+});
 
 const create = (props: chrome.contextMenus.CreateProperties) =>
   chrome.contextMenus.create(props, () => void chrome.runtime.lastError);
@@ -59,13 +77,11 @@ function flash(text: string, title: string): void {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  void installRules();
-  void buildMenus();
+  void Promise.all([installRules(), ensureSkipPrefs()]).then(buildMenus);
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  void installRules();
-  void buildMenus();
+  void Promise.all([installRules(), ensureSkipPrefs()]).then(buildMenus);
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

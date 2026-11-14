@@ -1,4 +1,4 @@
-import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName } from '../src/lib/store';
+import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS } from '../src/lib/store';
 import type { Video } from '../src/lib/types';
 
 const vid = (id: string): Video => ({
@@ -89,4 +89,19 @@ it('cleans names', () => {
   expect(cleanName('   ', 'X')).toBe('X');
   expect(cleanName('x'.repeat(150), 'X')).toHaveLength(100);
   expect(cleanName('  a   b  ', 'X')).toBe('a b');
+});
+it('defaults SponsorBlock prefs and round-trips them', async () => {
+  expect(await getSkipPrefs()).toEqual(DEFAULT_SKIP_PREFS);
+  const custom = { categories: { ...DEFAULT_SKIP_PREFS.categories, intro: false }, countdown: false };
+  await setSkipPrefs(custom);
+  expect(await getSkipPrefs()).toEqual(custom);
+});
+
+it('writes SponsorBlock defaults once and never overwrites a choice', async () => {
+  await ensureSkipPrefs();
+  expect((await chrome.storage.local.get('skipPrefs')).skipPrefs).toEqual(DEFAULT_SKIP_PREFS);
+  const custom = { ...DEFAULT_SKIP_PREFS, countdown: false };
+  await setSkipPrefs(custom);
+  await ensureSkipPrefs();
+  expect((await chrome.storage.local.get('skipPrefs')).skipPrefs).toEqual(custom);
 });
