@@ -108,6 +108,20 @@ pnpm test           # vitest suite
 ```
 After a build, press ⟳ on the extension in `chrome://extensions`: the service worker stays registered against the files it was loaded from, and a stale registration shows up as *"An unknown error occurred when fetching the script"*.
 
+### Reproducing the submitted package
+
+The `.zip` uploaded to addons.mozilla.org is `dist-firefox/` and nothing else, built from the tagged source with no code generated at packaging time:
+
+```sh
+pnpm install --frozen-lockfile   # pnpm 11.13.1, Node 20 or newer (see package.json)
+pnpm test                        # 94 tests, 10 suites
+pnpm build:firefox               # typecheck + vite build --mode firefox
+pnpm dlx web-ext lint --source-dir dist-firefox   # 0 errors, 0 warnings
+pnpm dlx web-ext build --source-dir dist-firefox --artifacts-dir . --overwrite-dest
+```
+
+`dist-firefox/` holds the readable output of that build: `manifest.json` (from `manifests/firefox.json`), the four page bundles plus `background.js` (an ES module), one classic-script content script (`frame.js`, no imports), the shared `chunks/`, `assets/` and `icons/`. Everything an extension needs is in `src/`; there is no remote code, no eval, and no runtime dependency.
+
 ## 🔐 Permissions
 
 | Permission | Why |
