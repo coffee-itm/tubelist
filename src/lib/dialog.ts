@@ -1,4 +1,4 @@
-import { h } from '../lib/dom';
+import { h } from './dom';
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
 const CARD = `m-auto w-[21rem] max-w-[calc(100vw-2rem)] rounded-2xl border border-zinc-200 bg-white p-4 text-zinc-900 shadow-2xl backdrop:bg-black/40 backdrop:backdrop-blur-[1px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 ${FOCUS}`;
@@ -13,14 +13,22 @@ interface Draft {
   confirm: string;
 }
 
+/** Distinguishes two dialogs that are somehow open at once (a double-click on Remove). */
+let seq = 0;
+
 /**
  * A native <dialog>, so Esc, focus containment, scroll locking and the top layer come from the
  * platform rather than from hand-rolled key handling. Resolves the field text ('' when there is
  * none) or null when the user cancelled.
  */
 function open(draft: Draft): Promise<string | null> {
+  const n = ++seq;
+  const titleId = `tl-dialog-title-${n}`;
+  const bodyId = `tl-dialog-body-${n}`;
   const { promise, resolve } = Promise.withResolvers<string | null>();
   const dlg = h('dialog', CARD);
+  dlg.setAttribute('aria-labelledby', titleId);
+  if (draft.body) dlg.setAttribute('aria-describedby', bodyId);
   const form = h('form', 'space-y-3');
   form.method = 'dialog';
   form.noValidate = true;
@@ -32,12 +40,18 @@ function open(draft: Draft): Promise<string | null> {
   cancel.type = 'button';
   cancel.addEventListener('click', () => dlg.close('cancel'));
 
-  form.append(h('h2', 'text-sm font-semibold', draft.title));
-  if (draft.body) form.append(h('p', 'text-xs leading-relaxed text-zinc-500 dark:text-zinc-400', draft.body));
+  const heading = h('h2', 'text-sm font-semibold', draft.title);
+  heading.id = titleId;
+  form.append(heading);
+  if (draft.body) {
+    const body = h('p', 'text-xs leading-relaxed text-zinc-500 dark:text-zinc-400', draft.body);
+    body.id = bodyId;
+    form.append(body);
+  }
 
   const field = draft.label ? h('input', FIELD) : null;
   if (field && draft.label) {
-    field.id = 'tl-dialog-input';
+    field.id = `tl-dialog-input-${n}`;
     field.autocomplete = 'off';
     const label = h('label', 'block space-y-1 text-xs font-medium text-zinc-600 dark:text-zinc-300', draft.label, field);
     label.htmlFor = field.id;

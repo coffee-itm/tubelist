@@ -1,10 +1,12 @@
 import '../styles.css';
-import { h } from '../lib/dom';
-import { getPlaylists } from '../lib/store';
+import { h, icon, TRASH_ICON } from '../lib/dom';
+import { getPlaylists, moveVideo, removeVideo } from '../lib/store';
+import { sortable } from '../lib/sortable';
+import { askConfirm } from '../lib/dialog';
 import { formatDuration, formatPublished } from '../lib/format';
 import { watchUrl, VIDEO_ID_RE } from '../lib/url';
 import { getProgress, progressOverlay, setProgress, type Progress } from '../lib/progress';
-import type { Playlist, Video } from '../lib/types';
+import type { Video } from '../lib/types';
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
 
@@ -13,6 +15,13 @@ const initialId = params.get('v');
 const pl = params.get('pl');
 
 const iframe = document.getElementById('yt') as HTMLIFrameElement;
+// frame.ts asks its embedder who it is: a reload YouTube starts inside the frame loses the extension
+// referrer, so the frame sets itself up once this page — and only this page — confirms.
+window.addEventListener('message', e => {
+  if (e.source !== iframe.contentWindow || e.origin !== 'https://www.youtube.com') return;
+  if ((e.data as { tubelist?: number } | null)?.tubelist !== 1) return;
+  iframe.contentWindow?.postMessage({ tubelist: 2 }, e.origin);
+});
 const titleEl = document.getElementById('title') as HTMLElement;
 const metaEl = document.getElementById('meta') as HTMLElement;
 const linkEl = document.getElementById('yt-link') as HTMLAnchorElement;
@@ -33,10 +42,16 @@ async function start(firstId: string): Promise<void> {
   for (const p of all) for (const v of p.videos) if (!videoById.has(v.id)) videoById.set(v.id, v);
 
   const main = document.querySelector('main') as HTMLElement;
-  const rows: HTMLButtonElement[] = [];
+  const rows: HTMLDivElement[] = [];
   const thumbs = new Map<string, HTMLElement>();
   let heading: HTMLElement | null = null;
   let currentId = firstId;
+
+  const setHeading = (): void => {
+    if (!heading || !playlist) return;
+    const index = playlist.videos.findIndex(x => x.id === currentId);
+    heading.textContent = index < 0 ? 'Up next' : `Up next · ${index + 1}/${playlist.videos.length}`;
+  };
 
   const updateRowProgress = (id: string, p: Progress): void => {
     const thumb = thumbs.get(id);
@@ -48,16 +63,19 @@ async function start(firstId: string): Promise<void> {
   if (playlist) {
     plNameEl.textContent = playlist.name;
     heading = h('h2', 'px-2 py-2 text-sm font-semibold');
-    const aside = h('aside', 'lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto rounded-2xl bg-zinc-900 p-2', heading);
+    const list = h('div');
+    const aside = h('aside', 'lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto rounded-2xl bg-zinc-900 p-2', heading, list);
     main.append(resizer(main, aside), aside);
 
     for (const v of playlist.videos) {
-      const row = h('button', `w-full text-left flex gap-3 rounded-xl p-2 hover:bg-zinc-800 ${FOCUS}`);
+      const row = h('div', 'relative rounded-xl');
+      const play = h('button', `w-full text-left flex gap-3 rounded-xl p-2 pr-9 hover:bg-zinc-800 ${FOCUS}`);
       const thumb = h('div', 'relative shrink-0 overflow-hidden rounded-lg');
       const img = h('img', 'w-[120px] h-[68px] object-cover');
       img.src = v.thumbnail;
       img.loading = 'lazy';
       img.alt = '';
+      img.draggable = false;
       thumb.append(img);
       const duration = formatDuration(v.durationSec);
       if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
@@ -72,11 +90,37 @@ async function start(firstId: string): Promise<void> {
       );
       if (v.publishedAt) text.lastElementChild!.setAttribute('title', new Date(v.publishedAt).toLocaleDateString());
 
-      row.append(thumb, text);
-      row.addEventListener('click', () => show(v.id));
+      play.append(thumb, text);
+      play.addEventListener('click', () => show(v.id));
+
+      // Lazy: no undo, the video is gone from storage. Add when a misclick ever loses real data.
+      const rm = h('button', `absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full text-zinc-500 transition hover:bg-red-600 hover:text-white ${FOCUS}`);
+      rm.setAttribute('aria-label', 'Remove from playlist');
+      rm.title = 'Remove from playlist';
+      rm.append(icon(TRASH_ICON));
+      rm.addEventListener('click', async () => {
+        if (!await askConfirm({ title: 'Remove video?', body: `"${v.title}" leaves "${playlist.name}".`, confirm: 'Remove' })) return;
+        await removeVideo(playlist.id, v.id);
+        // A second click while the first dialog is still up re-splices -1 and eats a neighbour.
+        const i = playlist.videos.findIndex(x => x.id === v.id);
+        if (i > -1) {
+          playlist.videos.splice(i, 1);
+          rows.splice(i, 1);
+        }
+        row.remove();
+        setHeading();
+      });
+
+      row.append(play, rm);
       rows.push(row);
-      aside.append(row);
+      list.append(row);
     }
+
+    sortable(list, rows, (from, to) => {
+      playlist.videos.splice(to, 0, ...playlist.videos.splice(from, 1));
+      void moveVideo(playlist.id, from, to);
+      setHeading();
+    });
   }
 
   let lastSave = 0;
@@ -128,7 +172,7 @@ async function start(firstId: string): Promise<void> {
     linkEl.href = `https://www.youtube.com/watch?v=${id}`;
 
     const index = playlist ? playlist.videos.findIndex(x => x.id === id) : -1;
-    if (heading && playlist) heading.textContent = index < 0 ? 'Up next' : `Up next · ${index + 1}/${playlist.videos.length}`;
+    setHeading();
 
     rows.forEach((row, i) => {
       const active = i === index;

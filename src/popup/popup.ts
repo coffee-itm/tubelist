@@ -1,11 +1,12 @@
 import '../styles.css';
-import { h } from '../lib/dom';
-import { cleanName, deletePlaylist, getPlaylists, removeVideo, renamePlaylist, savePlaylist, SAVED_SOURCE_ID } from '../lib/store';
+import { h, icon, CHEVRON_ICON, GEAR_ICON, TRASH_ICON } from '../lib/dom';
+import { cleanName, deletePlaylist, getPlaylists, moveVideo, removeVideo, renamePlaylist, savePlaylist, SAVED_SOURCE_ID } from '../lib/store';
+import { sortable } from '../lib/sortable';
 import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
 import { playerUrl, queueUrl, classifyUrl } from '../lib/url';
 import { saveLink, type SaveTarget } from '../lib/save';
-import { askConfirm, askText } from './dialog';
+import { askConfirm, askText } from '../lib/dialog';
 import type { Playlist, PlaylistKind, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -49,20 +50,27 @@ const targetSelect = h('select', `w-full appearance-none truncate rounded-lg bor
 targetSelect.setAttribute('aria-label', 'Playlist to save into');
 targetSelect.title = 'Where a pasted video goes';
 
-const chevron = h('span', 'pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400');
-chevron.innerHTML =
-  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const chevron = h('span', 'pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400', icon(CHEVRON_ICON));
 const targetWrap = h('div', 'relative min-w-0 flex-1', targetSelect, chevron);
 
 /** Rebuilds the options from storage, keeping the current choice when it still exists. */
 function syncTargets(playlists: Playlist[]): void {
   const wanted = targetSelect.value || openId || SAVED;
+  // The Saved playlist is renamable, so its dropdown row follows the stored name.
+  const saved = playlists.find(p => p.sourceId === SAVED_SOURCE_ID);
   targetSelect.replaceChildren(
-    option(SAVED, 'Saved'),
+    option(SAVED, saved?.name ?? 'Saved'),
     ...playlists.filter(p => p.sourceId !== SAVED_SOURCE_ID).map(p => option(p.id, p.name)),
   );
   if (![...targetSelect.options].some(o => o.value === wanted)) targetSelect.value = SAVED;
   else targetSelect.value = wanted;
+}
+
+/** Repaints one thumbnail's watched bar/badge in place (progress ticks every few seconds). */
+const progressThumbs = new Map<string, HTMLElement>();
+function paintProgress(thumb: HTMLElement, p: Progress | undefined): void {
+  for (const el of thumb.querySelectorAll('[data-progress]')) el.remove();
+  thumb.append(...progressOverlay(p));
 }
 
 const addButton = h('button', `shrink-0 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 active:bg-red-800 disabled:opacity-50 ${FOCUS}`, 'Add');
@@ -110,6 +118,7 @@ async function render(): Promise<void> {
   const progress = await getProgress();
   const playlist = playlists.find(p => p.id === openId);
   if (openId && !playlist) openId = null;
+  progressThumbs.clear();
   app.replaceChildren(playlist ? detail(playlist, progress) : list(playlists));
 }
 
@@ -128,8 +137,7 @@ function list(playlists: Playlist[]): HTMLElement {
   gear.type = 'button';
   gear.title = 'TubeList settings';
   gear.setAttribute('aria-label', 'TubeList settings');
-  gear.innerHTML =
-    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>';
+  gear.append(icon(GEAR_ICON));
   gear.addEventListener('click', () => void chrome.runtime.openOptionsPage());
   const create = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-red-700 active:bg-red-800 ${FOCUS}`, '+ New playlist');
   create.addEventListener('click', async () => {
@@ -283,7 +291,9 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   }
 
   const ul = h('ul', 'p-2 space-y-1');
-  for (const v of p.videos) ul.append(videoRow(p, v, progress[v.id]));
+  const rows = p.videos.map(v => videoRow(p, v, progress[v.id]));
+  for (const row of rows) ul.append(row);
+  sortable(ul, rows, (from, to) => void moveVideo(p.id, from, to));
   root.append(ul);
   return root;
 }
@@ -292,6 +302,7 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
   const url = playerUrl(v.id, p.id);
   const a = h('a', `flex gap-3 rounded-xl p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`);
   a.href = url;
+  a.draggable = false; // the row owns the drag; a link drag would carry the URL instead
   a.addEventListener('click', e => {
     e.preventDefault();
     void chrome.tabs.create({ url });
@@ -302,10 +313,12 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
   img.src = v.thumbnail;
   img.loading = 'lazy';
   img.alt = '';
+  img.draggable = false;
   thumb.append(img);
   const duration = formatDuration(v.durationSec);
   if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
-  thumb.append(...progressOverlay(prog));
+  progressThumbs.set(v.id, thumb);
+  paintProgress(thumb, prog);
 
   const published = formatPublished(v.publishedAt);
   const text = h('div', 'min-w-0 flex-1 pr-6',
@@ -320,8 +333,7 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
   const rm = h('button', `absolute right-2 top-2 grid size-7 place-items-center rounded-full bg-zinc-100 text-zinc-500 ring-1 ring-zinc-200 transition hover:bg-red-600 hover:text-white hover:ring-red-600 dark:bg-zinc-800 dark:text-zinc-400 dark:ring-zinc-700 ${FOCUS}`);
   rm.setAttribute('aria-label', 'Remove from playlist');
   rm.title = 'Remove from playlist';
-  rm.innerHTML =
-    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 4h4v3h-4zM6.5 7l1 13h9l1-13M10.5 11v6M13.5 11v6"/></svg>';
+  rm.append(icon(TRASH_ICON));
   rm.addEventListener('click', async () => {
     const ok = await askConfirm({
       title: 'Remove video?',
@@ -337,7 +349,17 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && (changes.playlists || changes.progress)) void render();
+  if (area !== 'local') return;
+  if (changes.playlists) {
+    void render();
+    return;
+  }
+  // Progress is written every few seconds while a video plays: repaint the thumbnails, not the popup.
+  if (changes.progress && openId) {
+    void getProgress().then(p => {
+      for (const [id, thumb] of progressThumbs) paintProgress(thumb, p[id]);
+    });
+  }
 });
 
 void render();

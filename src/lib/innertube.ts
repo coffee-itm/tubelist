@@ -107,6 +107,8 @@ export async function fetchPlaylistIds(listId: string): Promise<{ title: string 
   const ids = [...first.ids];
   let continuation = first.continuation;
   let pages = 1;
+  // ponytail: 200 pages (~20k videos) and stop; a longer playlist is truncated silently. Upgrade: keep
+  // paging and report the truncation to the caller.
   while (continuation && pages < 200) {
     const page = parseBrowse(await call('browse', { continuation }));
     if (!title) title = page.title;
@@ -150,10 +152,18 @@ export async function mapPool<T, R>(
   return results;
 }
 
-export async function fetchVideos(ids: string[], onProgress?: (done: number, total: number) => void): Promise<Video[]> {
+/** Fetches what it can; `failed` counts videos whose metadata could not be read (unavailable, blocked, error). */
+export async function fetchVideos(
+  ids: string[],
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ videos: Video[]; failed: number }> {
   const results = await mapPool(ids, 6, fetchVideo, onProgress);
   const addedAt = Date.now();
   const videos: Video[] = [];
-  for (const r of results) if (r.status === 'fulfilled' && r.value) videos.push({ ...r.value, addedAt });
-  return videos;
+  let failed = 0;
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) videos.push({ ...r.value, addedAt });
+    else failed++;
+  }
+  return { videos, failed };
 }

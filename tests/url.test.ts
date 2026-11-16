@@ -10,6 +10,11 @@ it.each([
   ['https://www.youtube.com/watch_videos?video_ids=dQw4w9WgXcQ,9bZkp7q19f0,bad,dQw4w9WgXcQ', { type: 'queue', listId: null, videoIds: ['dQw4w9WgXcQ', '9bZkp7q19f0'], videoId: null }],
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=TLGGQbVhu-4ufWExMzExMjAyNg', { type: 'queue', listId: 'TLGGQbVhu-4ufWExMzExMjAyNg', videoIds: [], videoId: 'dQw4w9WgXcQ' }],
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
+  // Watch Later / Liked are unreadable without account cookies: with a video id, the video is the target.
+  ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=WL&index=3', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
+  ['https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=LL', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
+  ['https://www.youtube.com/playlist?list=WL', { type: 'playlist', listId: 'WL', videoId: null }],
+  ['https://youtu.be/dQw4w9WgXcQ?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI', { type: 'playlist', listId: 'PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI', videoId: 'dQw4w9WgXcQ' }],
   ['https://www.youtube.com/watch?v=short', { type: 'invalid' }],
   ['https://evil.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
   ['https://notyoutube.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],

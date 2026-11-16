@@ -38,7 +38,7 @@ export async function saveLink(
   const isQueue = link.type === 'queue';
   const { title, ids } = isQueue ? { title: null, ids: await fetchQueueIds(link) } : await fetchPlaylistIds(link.listId);
   if (ids.length === 0) throw new Error('No videos found in this link');
-  const videos = await fetchVideos(ids, onProgress);
+  const { videos, failed } = await fetchVideos(ids, onProgress);
   if (videos.length === 0) throw new Error('None of the videos are available');
   const sourceId = link.listId;
   const existing = sourceId ? await findBySourceId(sourceId) : undefined;
@@ -47,5 +47,6 @@ export async function saveLink(
     existing?.name ??
     (isQueue ? 'Queue ' + new Date().toLocaleString() : title ?? 'YouTube playlist');
   await savePlaylist({ name, kind: isQueue ? 'queue' : 'youtube', sourceId, videos });
-  return `Saved ${videos.length} videos to ${name}`;
+  const skipped = failed ? ` (${failed} unavailable)` : '';
+  return `Saved ${videos.length} video${videos.length === 1 ? '' : 's'} to ${name}${skipped}`;
 }

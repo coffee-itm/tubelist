@@ -1,16 +1,20 @@
 {
   "name": "tubelist",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite build --watch --mode development",
+    "dev:firefox": "vite build --watch --mode firefox",
     "build": "tsc --noEmit && vite build",
+    "build:firefox": "tsc --noEmit && vite build --mode firefox",
     "test": "vitest run"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
     "@types/chrome": "^0.3.7",
+    "jsdom": "^31.0.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

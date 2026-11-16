@@ -1,14 +1,22 @@
 import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
-import { cleanName, ensureSkipPrefs, getPlaylists, SAVED_SOURCE_ID } from './lib/store';
+import { cleanName, ensureSkipPrefs, getPlaylists, installStoreServer, SAVED_SOURCE_ID } from './lib/store';
 import { saveLink, type SaveTarget } from './lib/save';
+
+// Playlist writes are applied here and nowhere else, so two contexts cannot overwrite each other's save.
+installStoreServer();
+
+// The extension's own host: `chrome-extension://<id>` in Chrome, `moz-extension://<uuid>` in Firefox,
+// where `runtime.id` (the gecko id) is not the host. `runtime.id` in initiatorDomains silently matches
+// nothing in Firefox, so the rules look dead there.
+const SELF_DOMAIN = new URL(chrome.runtime.getURL('')).hostname;
 
 const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
   {
-    // InnerTube rejects chrome-extension:// Origin with 403
+    // InnerTube rejects an extension Origin with 403 (both chrome-extension:// and moz-extension://)
     id: 1,
     priority: 1,
     action: { type: 'modifyHeaders', requestHeaders: [{ header: 'origin', operation: 'set', value: 'https://www.youtube.com' }] },
-    condition: { urlFilter: '|https://www.youtube.com/youtubei/', initiatorDomains: [chrome.runtime.id], resourceTypes: ['xmlhttprequest'] },
+    condition: { urlFilter: '|https://www.youtube.com/youtubei/', initiatorDomains: [SELF_DOMAIN], resourceTypes: ['xmlhttprequest'] },
   },
   {
     // Watch page refuses framing. The extension opens the first frame; YouTube then reloads that
@@ -17,7 +25,7 @@ const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
     id: 3,
     priority: 1,
     action: { type: 'modifyHeaders', responseHeaders: [{ header: 'x-frame-options', operation: 'remove' }, { header: 'content-security-policy', operation: 'remove' }] },
-    condition: { requestDomains: ['www.youtube.com'], initiatorDomains: [chrome.runtime.id, 'www.youtube.com'], resourceTypes: ['sub_frame'] },
+    condition: { requestDomains: ['www.youtube.com'], initiatorDomains: [SELF_DOMAIN, 'www.youtube.com'], resourceTypes: ['sub_frame'] },
   },
 ];
 
@@ -29,7 +37,8 @@ async function installRules(): Promise<void> {
 // protocols and ports must match"), so the SponsorBlock lookup runs here, where no page policy exists.
 // The response shape stays raw: the frame does its own filtering and mapping.
 const SB_API = 'https://sponsor.ajay.app/api/skipSegments/';
-const SB_ACTIONS = JSON.stringify(['skip', 'poi']);
+// POI segments have start == end (a marker, not a range) and this frame only ever skips ranges.
+const SB_ACTIONS = JSON.stringify(['skip']);
 
 type SegmentsRequest = { type: 'sb:segments'; prefix: string; categories: string[] };
 
@@ -76,13 +85,17 @@ function flash(text: string, title: string): void {
   }, 2500);
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  void Promise.all([installRules(), ensureSkipPrefs()]).then(buildMenus);
-});
+/** A failed rule install or prefs write must not take the context menus down with it. */
+async function boot(): Promise<void> {
+  await Promise.all([installRules(), ensureSkipPrefs()].map(p => p.catch((err: unknown) => console.warn('TubeList setup failed', err))));
+  // A worker suspended before its `flash` timer fired leaves a badge behind; start from clean.
+  await chrome.action.setBadgeText({ text: '' });
+  await buildMenus();
+}
 
-chrome.runtime.onStartup.addListener(() => {
-  void Promise.all([installRules(), ensureSkipPrefs()]).then(buildMenus);
-});
+chrome.runtime.onInstalled.addListener(() => void boot());
+
+chrome.runtime.onStartup.addListener(() => void boot());
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.playlists) void buildMenus();
@@ -113,7 +126,7 @@ async function handleClick(info: chrome.contextMenus.OnClickData, tabId: number 
     if (raw === undefined) return flash('!', 'Cannot ask for a name on this page; create the playlist in the TubeList popup');
     if (raw === null) return; // cancelled
     const name = cleanName(raw, '');
-    if (!name) return;
+    if (!name) return flash('!', 'A playlist needs a name');
     target = { kind: 'new', name };
   } else if (menuId === 'pl:saved') {
     target = { kind: 'saved' };

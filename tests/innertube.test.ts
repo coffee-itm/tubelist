@@ -1,4 +1,4 @@
-import { parsePlayer, parseBrowse, parseNext, mapPool, fetchPlaylistIds } from '../src/lib/innertube';
+import { parsePlayer, parseBrowse, parseNext, mapPool, fetchPlaylistIds, fetchVideo, fetchVideos, fetchQueueIds } from '../src/lib/innertube';
 import { VIDEO_ID_RE } from '../src/lib/url';
 import playerOk from './fixtures/player-ok.json';
 import playerUnavailable from './fixtures/player-unavailable.json';
@@ -82,4 +82,31 @@ it('pages through a playlist with the continuation token', async () => {
   const body = JSON.parse(fetchMock.mock.calls[1][1].body);
   expect(body.continuation).toBe(token);
   vi.unstubAllGlobals();
+});
+
+it('fails loudly on a non-200 response', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }));
+  await expect(fetchVideo('aaaaaaaaaaa')).rejects.toThrow('YouTube player failed: HTTP 400');
+  vi.unstubAllGlobals();
+});
+
+it('counts the videos it could not read, keeping the rest in order', async () => {
+  const ok = (id: string) => ({ videoDetails: { videoId: id, title: id, author: 'C', lengthSeconds: '60' } });
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ok('aaaaaaaaaaa') })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => playerUnavailable }),
+  );
+
+  const { videos, failed } = await fetchVideos(['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc']);
+  expect(videos.map(v => v.id)).toEqual(['aaaaaaaaaaa']);
+  expect(failed).toBe(2);
+  vi.unstubAllGlobals();
+});
+
+it('takes a queue without a list id straight from the link', async () => {
+  expect(await fetchQueueIds({ listId: null, videoIds: ['aaaaaaaaaaa', 'bbbbbbbbbbb'] })).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb']);
 });

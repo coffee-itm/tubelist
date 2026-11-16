@@ -34,10 +34,42 @@ it('adds a pasted video link to a target playlist', async () => {
 });
 
 it('saves a pasted playlist link as its own playlist', async () => {
-  expect(await saveLink({ type: 'playlist', listId: 'PL1', videoId: null }, { kind: 'saved' })).toBe('Saved 1 videos to My List');
+  expect(await saveLink({ type: 'playlist', listId: 'PL1', videoId: null }, { kind: 'saved' })).toBe('Saved 1 video to My List');
   const p = (await getPlaylists())[0];
   expect([p.kind, p.sourceId, p.name]).toEqual(['youtube', 'PL1', 'My List']);
   expect(p.videos.map(v => v.id)).toEqual([B]);
+});
+
+it('saves a watch_videos queue as its own playlist', async () => {
+  const message = await saveLink({ type: 'queue', listId: null, videoIds: [A, B], videoId: null }, { kind: 'saved' });
+  expect(message).toMatch(/^Saved 2 videos to Queue /);
+  const p = (await getPlaylists())[0];
+  expect([p.kind, p.sourceId]).toEqual(['queue', null]);
+  expect(p.videos.map(v => v.id)).toEqual([A, B]);
+});
+
+it('names the videos it could not read instead of dropping them silently', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as { videoId?: string };
+    if (String(url).includes('/player')) {
+      if (body.videoId === B) return { ok: false, status: 500, json: async () => ({}) };
+      return { ok: true, json: async () => player(body.videoId ?? '') };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        metadata: { playlistMetadataRenderer: { title: 'My List' } },
+        contents: [
+          { lockupViewModel: { contentType: 'LOCKUP_CONTENT_TYPE_VIDEO', contentId: A } },
+          { lockupViewModel: { contentType: 'LOCKUP_CONTENT_TYPE_VIDEO', contentId: B } },
+        ],
+      }),
+    };
+  }) as unknown as typeof fetch);
+
+  expect(await saveLink({ type: 'playlist', listId: 'PL1', videoId: null }, { kind: 'saved' })).toBe('Saved 1 video to My List (1 unavailable)');
+  expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual([A]);
+  vi.unstubAllGlobals();
 });
 
 it('rejects a non-YouTube link', async () => {

@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../tests/fixtures"
-CV=2.20261112.00.00
+# One source of truth for the client version: bump it in src/lib/innertube.ts, not here.
+CV=$(sed -n "s/^export const CLIENT_VERSION = '\(.*\)';$/\1/p" ../../src/lib/innertube.ts)
+[ -n "$CV" ] || { echo "no CLIENT_VERSION found in src/lib/innertube.ts" >&2; exit 1; }
 yt() { curl -sf -X POST "https://www.youtube.com/youtubei/v1/$1?prettyPrint=false" \
   -H 'Content-Type: application/json' \
   -d "{\"context\":{\"client\":{\"clientName\":\"WEB\",\"clientVersion\":\"$CV\",\"hl\":\"en\",\"gl\":\"US\"}},$2}"; }

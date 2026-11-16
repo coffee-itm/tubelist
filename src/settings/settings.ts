@@ -21,20 +21,33 @@ const logo = (): HTMLImageElement => {
 /** One row = one SponsorBlock toggle. `countdown` is the only non-category id. */
 function switchRow(o: { id: string; label: string }): HTMLElement {
   const countdown = o.id === 'countdown';
-  const on = countdown ? prefs.countdown : prefs.categories[o.id] !== false;
+  const ON = 'bg-green-500';
+  const OFF = 'bg-zinc-300 dark:bg-zinc-700';
+  // Read from `prefs` each time: a fast second click must not reuse the value the row was rendered with.
+  const isOn = (): boolean => (countdown ? prefs.countdown : prefs.categories[o.id] !== false);
+  const paint = (on: boolean): void => {
+    toggle.setAttribute('aria-checked', String(on));
+    toggle.classList.toggle(ON, on);
+    toggle.classList.toggle('bg-zinc-300', !on);
+    toggle.classList.toggle('dark:bg-zinc-700', !on);
+    knob.classList.toggle('translate-x-5', on);
+  };
+
+  const on = isOn();
   const knob = h('span', `absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : ''}`);
-  const toggle = h('button', `relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-700'} ${FOCUS}`, knob);
+  const toggle = h('button', `relative h-6 w-11 shrink-0 rounded-full transition-colors ${on ? ON : OFF} ${FOCUS}`, knob);
   toggle.type = 'button';
   toggle.setAttribute('role', 'switch');
   toggle.setAttribute('aria-checked', String(on));
   toggle.setAttribute('aria-label', o.label);
   toggle.addEventListener('click', async () => {
     const next: SkipPrefs = countdown
-      ? { ...prefs, countdown: !on }
-      : { ...prefs, categories: { ...prefs.categories, [o.id]: !on } };
+      ? { ...prefs, countdown: !isOn() }
+      : { ...prefs, categories: { ...prefs.categories, [o.id]: !isOn() } };
     await setSkipPrefs(next);
     prefs = next;
-    render();
+    // Update this switch in place: re-rendering the page would drop the focus the user just used.
+    paint(isOn());
   });
   return h('div', 'flex items-center justify-between gap-4 rounded-lg px-2 py-2.5 hover:bg-zinc-100 dark:hover:bg-zinc-800',
     h('span', 'text-sm', o.label), toggle);

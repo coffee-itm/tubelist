@@ -1,6 +1,21 @@
-// Runs in the watch page only when framed by TubeList's player.html; must stay import-free (classic script).
-if (window.top !== window && location.ancestorOrigins[0] === `chrome-extension://${chrome.runtime.id}`) {
-  const parentOrigin = `chrome-extension://${chrome.runtime.id}`;
+import { nextSkip, NO_COUNTDOWN, type Countdown, type Prefs, type Segment } from './lib/skip';
+
+// Runs in the watch page only when framed by TubeList's player.html. Chrome (and Firefox 148+) name the
+// ancestor origin; anything else — an older Firefox, or a reload YouTube starts inside the frame —
+// falls to the handshake, which no other page can answer from this origin. The referrer does not help
+// on Firefox: it sends no moz-extension referrer for the frame (measured on Gecko 158).
+const parentOrigin = chrome.runtime.getURL('').slice(0, -1); // chrome-extension://<id> | moz-extension://<uuid>
+const isFramed = window.top !== window;
+
+if (isFramed && location.ancestorOrigins?.[0] === parentOrigin) setup();
+else if (isFramed) {
+  window.addEventListener('message', e => {
+    if (e.origin === parentOrigin && (e.data as { tubelist?: number } | null)?.tubelist === 2) setup();
+  }, { once: true });
+  window.parent.postMessage({ tubelist: 1 }, parentOrigin);
+}
+
+function setup(): void {
   const style = document.createElement('style');
   // ytd-popup-container stays visible: it hosts the "still watching?" dialog.
   style.textContent = `
@@ -39,42 +54,36 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
   // --- SponsorBlock -------------------------------------------------------------------------
   // Segments come from the community database by 4-char hash prefix (the server has no videoID lookup).
   // Categories live only in the stored prefs object, so a new settings row needs no change here.
-  type Prefs = { categories?: Record<string, boolean>; countdown?: boolean };
-  type Segment = { c: string; a: string; s: number; e: number; u: string };
-
-  const COUNTDOWN_MS = 3000;
-
   let prefs: Prefs = {};
   let segs: Segment[] = [];
   let retryAt = 0; // backoff after a failed relay (service worker restarting or unregistered)
   let segsFor: string | null = null;
   const ignored = new Set<string>(); // segments the user seeked into: stay unskipped for this video
   let selfSeek = -1; // the time of our own last seek; the seeking event must not count as a user seek
-  let cd: string | null = null; // segment currently counting down
-  let cdAt = 0;
-  let cdEnd = 0;
+  let countdown: Countdown = NO_COUNTDOWN;
   let cdLeft = -1;
   let cdBox: HTMLElement | null = null;
   let cdLabel: HTMLElement | null = null;
 
   async function loadSegments(id: string): Promise<void> {
-    segsFor = id;
-    segs = [];
-    ignored.clear();
-    hideCountdown();
-    const on = prefs.categories ?? {};
-    const cats = Object.keys(on).filter(k => on[k] !== false);
-    if (!cats.length) {
-      // No prefs object yet (the service worker writes the defaults on install): retry next tick.
-      // Prefs that exist but are all off mean no request at all.
-      if (!prefs.categories) segsFor = null;
-      return;
-    }
-    const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)))]
-      .slice(0, 2).map(b => b.toString(16).padStart(2, '0')).join('');
-    // The watch page's own CSP covers this context ("Unsafe attempt to load URL … Domains, protocols and
-    // ports must match"), so the lookup is relayed to the service worker; see background.ts.
-    const res: unknown = await new Promise(resolve =>
+    try {
+      segsFor = id;
+      segs = [];
+      ignored.clear();
+      hideCountdown();
+      const on = prefs.categories ?? {};
+      const cats = Object.keys(on).filter(k => on[k] !== false);
+      if (!cats.length) {
+        // No prefs object yet (the service worker writes the defaults on install): retry next tick.
+        // Prefs that exist but are all off mean no request at all.
+        if (!prefs.categories) segsFor = null;
+        return;
+      }
+      const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id)))]
+        .slice(0, 2).map(b => b.toString(16).padStart(2, '0')).join('');
+      // The watch page's own CSP covers this context ("Unsafe attempt to load URL ... Domains, protocols and
+      // ports must match"), so the lookup is relayed to the service worker; see background.ts.
+      const { promise, resolve } = Promise.withResolvers<unknown>();
       chrome.runtime.sendMessage({ type: 'sb:segments', prefix: hash, categories: cats }, (r: unknown) => {
         if (chrome.runtime.lastError) {
           // No worker to answer (restarting, or its script failed to load): ask again in a few seconds
@@ -85,13 +94,18 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
           return;
         }
         resolve(r ?? []);
-      }),
-    );
-    if (segsFor !== id) return; // SPA moved on, or prefs changed, while the request was out
-    segs = (Array.isArray(res) ? res : [])
-      .filter(e => e?.videoID === id)
-      .flatMap(e => (e.segments ?? []) as { category: string; actionType: string; segment: [number, number]; UUID: string }[])
-      .map(s => ({ c: s.category, a: s.actionType, s: s.segment[0], e: s.segment[1], u: s.UUID }));
+      });
+      const res = await promise;
+      if (segsFor !== id) return; // SPA moved on, or prefs changed, while the request was out
+      segs = (Array.isArray(res) ? res : [])
+        .filter(e => e?.videoID === id)
+        .flatMap(e => (e.segments ?? []) as { category: string; actionType: string; segment: [number, number]; UUID: string }[])
+        .map(s => ({ c: s.category, a: s.actionType, s: s.segment[0], e: s.segment[1], u: s.UUID }));
+    } catch {
+      // Extension reloaded or context invalidated: back off instead of throwing every tick.
+      segsFor = null;
+      retryAt = Date.now() + 5000;
+    }
   }
 
   /** One fetch per video id; called from the loop, so it also notices SPA navigation. */
@@ -106,6 +120,9 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
     v.currentTime = t;
   };
 
+  // Fullscreen renders only the fullscreen element's subtree, so the countdown has to live inside it.
+  const overlayHost = (): Element => document.fullscreenElement ?? document.documentElement;
+
   function overlay(): HTMLElement {
     if (cdBox) return cdBox;
     cdBox = document.createElement('div');
@@ -117,11 +134,11 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
     skip.textContent = 'Skip now';
     skip.addEventListener('click', () => {
       const v = document.querySelector('video');
-      if (v instanceof HTMLVideoElement) seekTo(v, cdEnd);
+      if (v instanceof HTMLVideoElement) seekTo(v, countdown.end);
       hideCountdown();
     });
     cdBox.append(cdLabel, skip);
-    document.documentElement.append(cdBox);
+    overlayHost().append(cdBox);
     return cdBox;
   }
 
@@ -135,35 +152,32 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
   }
 
   function hideCountdown(): void {
-    cd = null;
+    countdown = NO_COUNTDOWN;
     cdLeft = -1;
     if (cdBox) cdBox.hidden = true;
   }
 
   /** Skips one active segment per tick; a sponsor segment first counts down. */
   function skipPass(v: HTMLVideoElement): void {
-    const t = v.currentTime;
-    for (const g of segs) {
-      if (prefs.categories?.[g.c] === false || ignored.has(g.u)) continue;
-      if (t < g.s || t >= g.e - 0.05) continue;
-      if (g.c === 'sponsor' && prefs.countdown !== false) {
-        if (cd !== g.u) {
-          cd = g.u;
-          cdAt = Date.now() + COUNTDOWN_MS;
-          cdEnd = g.e;
-        }
-        const left = Math.ceil((cdAt - Date.now()) / 1000);
-        if (left > 0) {
-          showCountdown(left);
-          return;
-        }
-      }
+    const step = nextSkip(v.currentTime, segs, prefs, ignored, countdown, Date.now());
+    if (step.action === 'wait') {
+      countdown = step.countdown;
+      showCountdown(step.left);
+      return;
+    }
+    if (step.action === 'seek') {
       hideCountdown();
-      seekTo(v, g.e);
+      seekTo(v, step.to);
       return;
     }
     hideCountdown(); // no active segment (or the user seeked out of the one counting down)
   }
+
+  // The countdown box moves with the fullscreen element, so the skip button stays reachable.
+  document.addEventListener('fullscreenchange', () => {
+    const host = overlayHost();
+    if (cdBox && cdBox.parentElement !== host) host.append(cdBox);
+  });
 
   // Media events don't bubble and <video> appears later, so capture on document.
   document.addEventListener('seeking', e => {

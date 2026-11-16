@@ -42,6 +42,9 @@ export function classifyUrl(raw: string): LinkInfo {
   const list = listParam && LIST_RE.test(listParam) ? listParam : null;
 
   if (list?.startsWith('TL')) return { type: 'queue', listId: list, videoIds: [], videoId: v };
+  // Watch Later and Liked are account lists: InnerTube cannot read them without the account's cookies.
+  // With a `v` the user is pointing at that video, so add the video rather than an unreadable list.
+  if (list === 'WL' || list === 'LL') return v ? { type: 'video', videoId: v } : { type: 'playlist', listId: list, videoId: null };
   if (list && !list.startsWith('RD')) return { type: 'playlist', listId: list, videoId: v };
   if (v) return { type: 'video', videoId: v };
   return { type: 'invalid' };

@@ -1,4 +1,5 @@
-import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS } from '../src/lib/store';
+import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, moveVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS } from '../src/lib/store';
+import { getProgress, setProgress } from '../src/lib/progress';
 import type { Video } from '../src/lib/types';
 
 const vid = (id: string): Video => ({
@@ -57,6 +58,16 @@ it('removes videos, renames and deletes playlists', async () => {
   expect(await getPlaylists()).toHaveLength(0);
 });
 
+it('reorders videos by index and ignores out-of-range moves', async () => {
+  const p = await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [vid('aaaaaaaaaaa'), vid('bbbbbbbbbbb'), vid('ccccccccccc')] });
+  await moveVideo(p.id, 0, 2);
+  expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual(['bbbbbbbbbbb', 'ccccccccccc', 'aaaaaaaaaaa']);
+  await moveVideo(p.id, 2, 0);
+  expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc']);
+  await moveVideo(p.id, 0, 9);
+  expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual(['aaaaaaaaaaa', 'bbbbbbbbbbb', 'ccccccccccc']);
+});
+
 it('throws on an unknown playlist id', async () => {
   await expect(addVideo('nope', vid('aaaaaaaaaaa'))).rejects.toThrow('Playlist not found');
   await expect(removeVideo('nope', 'aaaaaaaaaaa')).rejects.toThrow('Playlist not found');
@@ -104,4 +115,43 @@ it('writes SponsorBlock defaults once and never overwrites a choice', async () =
   await setSkipPrefs(custom);
   await ensureSkipPrefs();
   expect((await chrome.storage.local.get('skipPrefs')).skipPrefs).toEqual(custom);
+});
+
+it('drops stored categories that no longer exist and keeps the rest', async () => {
+  await chrome.storage.local.set({
+    skipPrefs: { categories: { sponsor: false, poi_highlight: true, ghost: true }, countdown: false },
+  });
+  expect(await getSkipPrefs()).toEqual({ categories: { ...DEFAULT_SKIP_PREFS.categories, sponsor: false }, countdown: false });
+});
+
+it('prunes progress for a video no playlist holds any more', async () => {
+  const p = await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [vid('aaaaaaaaaaa'), vid('bbbbbbbbbbb')] });
+  await setProgress('aaaaaaaaaaa', 10, 100, false);
+  await removeVideo(p.id, 'aaaaaaaaaaa');
+  expect(await getProgress()).toEqual({});
+  await setProgress('bbbbbbbbbbb', 10, 100, false);
+  await deletePlaylist(p.id);
+  expect(await getProgress()).toEqual({});
+});
+
+it('keeps progress a second playlist still needs', async () => {
+  const a = await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [vid('aaaaaaaaaaa')] });
+  const b = await savePlaylist({ name: 'B', kind: 'custom', sourceId: null, videos: [vid('aaaaaaaaaaa')] });
+  await setProgress('aaaaaaaaaaa', 10, 100, false);
+  await removeVideo(a.id, 'aaaaaaaaaaa');
+  expect((await getProgress()).aaaaaaaaaaa).toMatchObject({ t: 10 });
+  await deletePlaylist(b.id);
+  expect(await getProgress()).toEqual({});
+});
+
+it('drops progress for videos a refreshed playlist no longer contains', async () => {
+  await savePlaylist({ name: 'A', kind: 'youtube', sourceId: 'PL1', videos: [vid('aaaaaaaaaaa')] });
+  await setProgress('aaaaaaaaaaa', 10, 100, false);
+  await savePlaylist({ name: 'A', kind: 'youtube', sourceId: 'PL1', videos: [vid('bbbbbbbbbbb')] });
+  expect(await getProgress()).toEqual({});
+});
+
+it('deleting a playlist that is already gone is not an error', async () => {
+  await deletePlaylist('nope');
+  expect(await getPlaylists()).toEqual([]);
 });
