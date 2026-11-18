@@ -1,4 +1,4 @@
-import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, moveVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS } from '../src/lib/store';
+import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, moveVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS, getPlayerPrefs, setPlayerPrefs, DEFAULT_PLAYER_PREFS } from '../src/lib/store';
 import { getProgress, setProgress } from '../src/lib/progress';
 import type { Video } from '../src/lib/types';
 
@@ -20,12 +20,13 @@ it('creates a playlist', async () => {
 
 it('updates a playlist with the same sourceId in place', async () => {
   const first = await savePlaylist({ name: 'A', kind: 'youtube', sourceId: 'PL1', videos: [vid('aaaaaaaaaaa')] });
-  const second = await savePlaylist({ name: 'B', kind: 'youtube', sourceId: 'PL1', videos: [vid('bbbbbbbbbbb')] });
+  const second = await savePlaylist({ name: 'B', kind: 'queue', sourceId: 'PL1', videos: [vid('bbbbbbbbbbb')] });
   const all = await getPlaylists();
   expect(all).toHaveLength(1);
   expect(second.id).toBe(first.id);
   expect(second.createdAt).toBe(first.createdAt);
   expect(all[0].name).toBe('B');
+  expect(all[0].kind).toBe('queue'); // the re-save carries every field, not just the videos
   expect(all[0].videos.map(v => v.id)).toEqual(['bbbbbbbbbbb']);
 });
 
@@ -154,4 +155,12 @@ it('drops progress for videos a refreshed playlist no longer contains', async ()
 it('deleting a playlist that is already gone is not an error', async () => {
   await deletePlaylist('nope');
   expect(await getPlaylists()).toEqual([]);
+});
+
+it('defaults player prefs, ignoring junk values, and round-trips a choice', async () => {
+  expect(await getPlayerPrefs()).toEqual(DEFAULT_PLAYER_PREFS);
+  await chrome.storage.local.set({ playerPrefs: { description: 'yes', sync: true } });
+  expect(await getPlayerPrefs()).toEqual({ description: true, sync: true });
+  await setPlayerPrefs({ description: false, sync: true });
+  expect(await getPlayerPrefs()).toEqual({ description: false, sync: true });
 });

@@ -17,7 +17,7 @@ cookies, your history or any other browsing data.
 | Destination | What is sent | Why |
 | --- | --- | --- |
 | `www.youtube.com` (InnerTube API) and `i.ytimg.com` | The video or playlist ID you are saving or playing, and playlist pages for a link you asked to save | Video metadata, thumbnails, playlist and queue contents |
-| `www.youtube.com` (framed watch page) | The ordinary request a YouTube video page makes, as your signed-in browser | Playback, so plays land in your YouTube watch history and resume position |
+| `www.youtube.com` (framed watch page or embed player) | The ordinary request a YouTube video page makes, as your signed-in browser — plus, for the embed player only, the `Referer` header `https://tubelist.app/`, which YouTube requires (an extension page cannot supply its own) | Playback, so plays land in your YouTube watch history and resume position |
 | `sponsor.ajay.app` (SponsorBlock) | The first **4 characters** of the SHA-256 hash of the video ID, plus the list of segment categories you enabled in Settings | Fetching crowd-sourced skip segments |
 
 That 4-character prefix is the only data this extension sends to a third party, and it is the whole reason

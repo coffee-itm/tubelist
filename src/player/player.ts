@@ -1,12 +1,13 @@
 import '../styles.css';
-import { h, icon, TRASH_ICON } from '../lib/dom';
-import { getPlaylists, moveVideo, removeVideo } from '../lib/store';
+import { h, icon, LOOP_ICON, LOOP_ONE_ICON, MOON_ICON, TRASH_ICON, YOUTUBE_ICON } from '../lib/dom';
+import { getPlaylists, getPlayerPrefs, moveVideo, removeVideo, setPlayerPrefs } from '../lib/store';
 import { sortable } from '../lib/sortable';
 import { askConfirm } from '../lib/dialog';
 import { formatDuration, formatPublished } from '../lib/format';
-import { watchUrl, VIDEO_ID_RE } from '../lib/url';
+import { embedUrl, watchUrl, VIDEO_ID_RE } from '../lib/url';
 import { getProgress, progressOverlay, setProgress, type Progress } from '../lib/progress';
-import type { Video } from '../lib/types';
+import { fetchVideo } from '../lib/innertube';
+import type { PlayerPrefs, Video } from '../lib/types';
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
 
@@ -37,9 +38,168 @@ if (!initialId || !VIDEO_ID_RE.test(initialId)) {
 async function start(firstId: string): Promise<void> {
   const all = await getPlaylists();
   const progress = await getProgress();
+  let prefs = await getPlayerPrefs();
+
+  type LoopMode = 'off' | 'all' | 'one';
+  const storedLoop = localStorage.getItem('loop');
+  let loop: LoopMode = storedLoop === 'all' || storedLoop === 'one' ? storedLoop : 'off';
+  const BTN = `inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${FOCUS}`;
+  const OFF = 'border-zinc-800 bg-zinc-900 text-zinc-300 hover:bg-zinc-800';
+  const ON = 'border-red-600 bg-red-600 text-white hover:bg-red-500';
+  const loopBtn = h('button', BTN);
+  const syncBtn = h('button', BTN);
+  const renderLoop = (): void => {
+    const label = loop === 'one' ? 'Loop one' : loop === 'all' ? 'Loop all' : 'Loop off';
+    loopBtn.className = `${BTN} ${loop === 'off' ? OFF : ON}`;
+    loopBtn.replaceChildren(icon(loop === 'one' ? LOOP_ONE_ICON : LOOP_ICON), document.createTextNode(label));
+    loopBtn.setAttribute('aria-pressed', String(loop !== 'off'));
+    loopBtn.title = loop === 'off'
+      ? 'Loop off — click for loop all'
+      : loop === 'all' ? 'Loop all — click for loop one' : 'Loop one — click to turn loop off';
+  };
+  const renderSync = (): void => {
+    syncBtn.className = `${BTN} ${prefs.sync ? ON : OFF}`;
+    syncBtn.replaceChildren(icon(YOUTUBE_ICON), document.createTextNode(prefs.sync ? 'YouTube sync: on' : 'YouTube sync: off'));
+    syncBtn.setAttribute('aria-pressed', String(prefs.sync));
+    syncBtn.title = prefs.sync
+      ? 'Playing through your signed-in YouTube watch page — click for the embed player'
+      : 'Embed player — click to play through your signed-in YouTube account';
+  };
+  loopBtn.addEventListener('click', () => {
+    loop = loop === 'off' ? 'all' : loop === 'all' ? 'one' : 'off';
+    localStorage.setItem('loop', loop);
+    renderLoop();
+  });
+  syncBtn.addEventListener('click', () => {
+    prefs = { ...prefs, sync: !prefs.sync };
+    renderSync();
+    save(false);
+    show(currentId);
+    void setPlayerPrefs(prefs);
+  });
+  const SLEEP_MINUTES = [5, 10, 15, 30, 45, 60];
+  const sleepBtn = h('button', BTN);
+  const sleepMenu = h('div', 'absolute bottom-full left-0 z-20 mb-1 hidden rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl');
+  sleepMenu.setAttribute('aria-label', 'Sleep timer');
+  const sleepWrap = h('div', 'relative', sleepBtn, sleepMenu);
+  let sleepAt = 0; // wall-clock deadline; a paused or buffering video still counts down
+  let sleepTick = 0;
+  const setMenu = (open: boolean): void => {
+    sleepMenu.classList.toggle('hidden', !open);
+    sleepBtn.setAttribute('aria-expanded', String(open));
+  };
+  const renderSleep = (): void => {
+    sleepBtn.className = `${BTN} ${sleepAt ? ON : OFF}`;
+    const label = sleepAt ? `Sleep: ${formatDuration(Math.max(0, Math.ceil((sleepAt - Date.now()) / 1000)))}` : 'Sleep off';
+    sleepBtn.replaceChildren(icon(MOON_ICON), document.createTextNode(label));
+    sleepBtn.title = sleepAt ? 'Sleep timer — click to change or cancel' : 'Pause playback after a set time';
+  };
+  const setSleep = (minutes: number): void => {
+    clearInterval(sleepTick);
+    sleepTick = 0;
+    sleepAt = minutes ? Date.now() + minutes * 60_000 : 0;
+    // Only ticks while a timer is armed. The frame owns the <video>: it gets a command, because the
+    // player is a cross-origin iframe. A hidden tab throttles this to about once a minute, so the
+    // pause can land late.
+    if (sleepAt) sleepTick = setInterval(() => {
+      if (Date.now() < sleepAt) {
+        renderSleep();
+        return;
+      }
+      sleepAt = 0;
+      clearInterval(sleepTick);
+      sleepTick = 0;
+      renderSleep();
+      iframe.contentWindow?.postMessage({ tubelist: 3, cmd: 'pause' }, 'https://www.youtube.com');
+    }, 1000);
+    setMenu(false);
+    renderSleep();
+  };
+  for (const minutes of SLEEP_MINUTES.concat(0)) {
+    const item = h('button', `block w-full whitespace-nowrap rounded px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800 ${FOCUS}`, minutes ? `${minutes} min` : 'Off');
+    item.addEventListener('click', () => setSleep(minutes));
+    sleepMenu.append(item);
+  }
+  const customInput = h('input', `mt-1 w-full rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-500 ${FOCUS}`);
+  customInput.type = 'text';
+  customInput.placeholder = 'hh:mm';
+  customInput.setAttribute('aria-label', 'Custom sleep timer, hh:mm');
+  // A form gives Enter-to-apply for free.
+  const custom = h('form', '', customInput);
+  custom.addEventListener('submit', e => {
+    e.preventDefault();
+    // `hh:mm`, or a bare number of minutes. Anything else (1.30, an hour+minutes in the wrong shape)
+    // leaves the current timer alone and the value in the field to fix.
+    const m = /^(?:(\d+):)?(\d+)$/.exec(customInput.value.trim());
+    const minutes = m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : 0;
+    if (minutes > 0) setSleep(Math.min(minutes, 1440));
+  });
+  sleepMenu.append(custom);
+  const setMenuOpen = (open: boolean): void => {
+    setMenu(open);
+    if (open) customInput.focus(); // opening is a request to type a time; the presets still take a click
+  };
+  sleepBtn.addEventListener('click', () => setMenuOpen(sleepMenu.classList.contains('hidden')));
+  document.addEventListener('pointerdown', e => {
+    if (!sleepMenu.classList.contains('hidden') && !sleepWrap.contains(e.target as Node)) setMenu(false);
+  });
+  document.addEventListener('keydown', e => e.key === 'Escape' && setMenu(false));
+  renderSleep();
+
+  renderLoop();
+  renderSync();
+  (document.getElementById('controls') as HTMLElement).append(syncBtn, sleepWrap, loopBtn);
   const playlist = all.find(p => p.id === pl);
+  // `?pl=` is what the popup opens, but a player URL can lose it (old bookmark, hand-edited link).
+  // Loop all then still needs a queue, so fall back to the playlist holding the opening video.
+  const loopList = playlist ?? all.find(p => p.videos.some(v => v.id === firstId));
   const videoById = new Map<string, Video>();
   for (const p of all) for (const v of p.videos) if (!videoById.has(v.id)) videoById.set(v.id, v);
+
+  const descriptions = new Map<string, string>();
+  const descEl = h('details', 'mt-3 rounded-xl bg-zinc-900 p-3 text-sm');
+  const descBody = h('div', 'mt-2 max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400');
+  descEl.append(h('summary', 'cursor-pointer text-xs font-medium text-zinc-400', 'Description'), descBody);
+  descEl.open = true; // the toggle means "shown"; collapsing is the user's own call
+  descEl.hidden = true;
+  metaEl.after(descEl);
+
+  /** Description text is untrusted: links are built as nodes, never as markup. */
+  const linkify = (el: HTMLElement, text: string): void => {
+    el.replaceChildren();
+    let at = 0;
+    for (const m of text.matchAll(/https?:\/\/\S+/g)) {
+      const url = m[0].replace(/[.,;:!?]+$/, ''); // prose punctuation that ends the sentence, not the link
+      const a = h('a', 'text-blue-400 underline hover:text-blue-300', url);
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      el.append(text.slice(at, m.index), a);
+      at = m.index! + url.length;
+    }
+    el.append(text.slice(at));
+  };
+
+  /** Shown only while the preference is on. A row saved before descriptions existed fetches one once. */
+  const renderDescription = async (id: string, video: Video | undefined): Promise<void> => {
+    descEl.hidden = !prefs.description;
+    if (!prefs.description) return;
+    let text = video?.description ?? descriptions.get(id);
+    if (text === undefined) {
+      const fetched = await fetchVideo(id).catch(() => null);
+      if (!fetched) {
+        // Not cached: a failed request must not pin the panel empty for the rest of the session.
+        descEl.hidden = true;
+        return;
+      }
+      text = fetched.description ?? '';
+      descriptions.set(id, text);
+      if (video) video.description = text;
+      if (currentId !== id) return; // the user moved on while the request was out
+    }
+    linkify(descBody, text);
+    descEl.hidden = !text;
+  };
 
   const main = document.querySelector('main') as HTMLElement;
   const rows: HTMLDivElement[] = [];
@@ -140,10 +300,23 @@ async function start(firstId: string): Promise<void> {
     if (typeof m.t === 'number') live.t = m.t;
     if (typeof m.d === 'number' && Number.isFinite(m.d) && m.d > 0) live.d = m.d;
     const ended = m.state === 'ended';
-    if (ended || m.state === 'pause' || Date.now() - lastSave > 5000) {
+    // YouTube's end screen can hold the media at `duration` without the `ended` event reaching us
+    // (the embed shows its replay overlay there). Near-end counts as finished while looping, so the
+    // playlist keeps moving instead of stalling on that overlay.
+    const finished = ended || (live.d > 0 && live.t >= live.d - 0.5);
+    if (ended || m.state === 'pause' || Date.now() - lastSave > 5000 || (finished && loop !== 'off')) {
       lastSave = Date.now();
-      save(ended);
+      save(ended || (finished && loop !== 'off'));
     }
+    if (!finished || loop === 'off') return;
+    if (loop === 'one') {
+      // save() is async: mark local progress watched so show() does not resume at the end.
+      progress[currentId] = { t: 0, d: live.d, done: true };
+      show(currentId);
+      return;
+    }
+    const i = loopList ? loopList.videos.findIndex(v => v.id === currentId) : -1;
+    show(i > -1 ? loopList!.videos[(i + 1) % loopList!.videos.length].id : currentId);
   });
   // The player page is the "left off here" moment; hidden tab or unload.
   document.addEventListener('visibilitychange', () => {
@@ -157,8 +330,9 @@ async function start(firstId: string): Promise<void> {
     const stored = progress[id];
     // ponytail: resume source is local progress; reading the account's resume position is not implemented.
     const resumeAt = stored && !stored.done && stored.t > 3 ? stored.t : 0;
-    iframe.src = watchUrl(id, resumeAt);
+    iframe.src = prefs.sync ? watchUrl(id, resumeAt) : embedUrl(id, resumeAt);
     const video = videoById.get(id);
+    void renderDescription(id, video);
 
     if (video) {
       titleEl.textContent = video.title;
@@ -189,6 +363,24 @@ async function start(firstId: string): Promise<void> {
 
     history.replaceState(null, '', `?${new URLSearchParams(pl ? { v: id, pl } : { v: id })}`);
   };
+
+  // Toggles apply live. Switching the player source reloads the current video from its stored position.
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.playerPrefs) return;
+    const wasSync = prefs.sync;
+    const next = changes.playerPrefs.newValue as Partial<PlayerPrefs> | undefined;
+    prefs = {
+      description: typeof next?.description === 'boolean' ? next.description : prefs.description,
+      sync: typeof next?.sync === 'boolean' ? next.sync : prefs.sync,
+    };
+    if (prefs.sync !== wasSync) {
+      save(false);
+      show(currentId);
+    } else {
+      void renderDescription(currentId, videoById.get(currentId));
+    }
+    renderSync();
+  });
 
   document.addEventListener('keydown', e => {
     if (e.target instanceof HTMLInputElement) return;

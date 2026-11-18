@@ -29,8 +29,27 @@ const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
   },
 ];
 
+// The embed player refuses a chrome-extension:// embedder: no Referer means the page stops at
+// "Video player configuration error — Error 153". An extension page cannot send one itself, so the
+// rule supplies the project's site as the referrer. Same-origin www.youtube.com also works, but
+// claiming to be YouTube is a lie the error page does not need.
+const EMBED_REFERER = 'https://tubelist.app/';
+
+const EMBED_RULES: chrome.declarativeNetRequest.Rule[] = [
+  {
+    id: 4,
+    priority: 2,
+    action: { type: 'modifyHeaders', requestHeaders: [{ header: 'referer', operation: 'set', value: EMBED_REFERER }] },
+    condition: { urlFilter: '|https://www.youtube.com/embed/', initiatorDomains: [SELF_DOMAIN], resourceTypes: ['sub_frame'] },
+  },
+];
+
 async function installRules(): Promise<void> {
-  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2, 3], addRules: HEADER_RULES });
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [1, 2, 3, 4], addRules: HEADER_RULES });
+  // Its own call: a browser that will not rewrite Referer loses the embed player, not framing.
+  await chrome.declarativeNetRequest
+    .updateDynamicRules({ addRules: EMBED_RULES })
+    .catch((err: unknown) => console.warn('TubeList embed rule failed', err));
 }
 
 // The framed watch page's CSP applies to content-script fetches ("Unsafe attempt to load URL … Domains,
@@ -41,8 +60,19 @@ const SB_API = 'https://sponsor.ajay.app/api/skipSegments/';
 const SB_ACTIONS = JSON.stringify(['skip']);
 
 type SegmentsRequest = { type: 'sb:segments'; prefix: string; categories: string[] };
+type CssRequest = { type: 'tl:css'; css: string };
 
-chrome.runtime.onMessage.addListener((msg: SegmentsRequest, _sender, respond: (r: unknown) => void) => {
+chrome.runtime.onMessage.addListener((msg: SegmentsRequest | CssRequest, sender, respond: (r: unknown) => void) => {
+  if (msg?.type === 'tl:css') {
+    // Injected by the browser, not as a <style> node: YouTube rebuilds its document while booting, so
+    // a node the content script adds at document_start is dropped (and the parser stalls if it goes on
+    // <html> before <head> exists). An extension stylesheet is not part of that DOM at all.
+    if (typeof msg.css !== 'string' || !sender.url?.startsWith('https://www.youtube.com/') || sender.tab?.id === undefined || sender.frameId === undefined) return;
+    chrome.scripting
+      .insertCSS({ target: { tabId: sender.tab.id, frameIds: [sender.frameId] }, css: msg.css })
+      .catch((err: unknown) => console.warn('TubeList frame CSS failed', err));
+    return;
+  }
   if (msg?.type !== 'sb:segments') return;
   const query = `?categories=${encodeURIComponent(JSON.stringify(msg.categories))}&actionTypes=${encodeURIComponent(SB_ACTIONS)}`;
   fetch(SB_API + msg.prefix + query)

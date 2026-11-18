@@ -1,4 +1,4 @@
-import { classifyUrl, playerUrl, queueUrl, watchUrl } from '../src/lib/url';
+import { classifyUrl, embedUrl, playerUrl, queueUrl, watchUrl } from '../src/lib/url';
 
 it.each([
   ['https://www.youtube.com/watch?v=dQw4w9WgXcQ', { type: 'video', videoId: 'dQw4w9WgXcQ' }],
@@ -31,6 +31,11 @@ it('builds player URLs', () => {
 it('builds watch URLs', () => {
   expect(watchUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   expect(watchUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=125s');
+});
+
+it('builds embed URLs with the resume point as `start`', () => {
+  expect(embedUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1');
+  expect(embedUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&start=125');
 });
 
 it('builds queue links', () => {

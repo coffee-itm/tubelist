@@ -1,4 +1,4 @@
-import type { Playlist, PlaylistKind, SkipPrefs, Video } from './types';
+import type { Playlist, PlaylistKind, PlayerPrefs, SkipPrefs, Video } from './types';
 import { PROGRESS_KEY } from './progress';
 
 const KEY = 'playlists';
@@ -53,6 +53,7 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
         const next = new Set(op.input.videos.map(v => v.id));
         const removed = existing.videos.map(v => v.id).filter(id => !next.has(id));
         existing.name = op.input.name;
+        existing.kind = op.input.kind;
         existing.videos = op.input.videos;
         return { playlists, value: existing, removed };
       }
@@ -260,6 +261,22 @@ export async function setSkipPrefs(p: SkipPrefs): Promise<void> {
 export async function ensureSkipPrefs(): Promise<void> {
   const res = await chrome.storage.local.get(SKIP_KEY);
   if (!res[SKIP_KEY]) await setSkipPrefs(DEFAULT_SKIP_PREFS);
+}
+
+// Player toggles. The player page reads these raw; defaults cover an older profile that never saved them.
+const PLAYER_KEY = 'playerPrefs';
+export const DEFAULT_PLAYER_PREFS: PlayerPrefs = { description: true, sync: false };
+
+export async function getPlayerPrefs(): Promise<PlayerPrefs> {
+  const saved = ((await chrome.storage.local.get(PLAYER_KEY))[PLAYER_KEY] ?? {}) as Partial<PlayerPrefs>;
+  return {
+    description: typeof saved.description === 'boolean' ? saved.description : DEFAULT_PLAYER_PREFS.description,
+    sync: typeof saved.sync === 'boolean' ? saved.sync : DEFAULT_PLAYER_PREFS.sync,
+  };
+}
+
+export async function setPlayerPrefs(p: PlayerPrefs): Promise<void> {
+  await chrome.storage.local.set({ [PLAYER_KEY]: p });
 }
 
 // ponytail: code points, not grapheme clusters — a flag emoji can still be cut in half at 100.

@@ -52,6 +52,7 @@ export function parsePlayer(json: unknown): Omit<Video, 'addedAt'> | null {
     durationSec: Number(videoDetails?.lengthSeconds) || null,
     publishedAt: str(renderer?.publishDate) ?? str(renderer?.uploadDate) ?? null,
     thumbnail: thumbUrl(id),
+    description: str(videoDetails?.shortDescription) ?? '',
   };
 }
 

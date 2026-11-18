@@ -8,6 +8,7 @@ export interface Video {
   publishedAt: string | null; // ISO 8601 from player microformat
   thumbnail: string;          // thumbUrl(id)
   addedAt: number;            // Date.now()
+  description?: string;       // shortDescription from the player; missing on rows saved before v0.4
 }
 
 export interface Playlist {
@@ -23,6 +24,12 @@ export interface Playlist {
 export interface SkipPrefs {
   categories: Record<string, boolean>; // SponsorBlock category id → enabled
   countdown: boolean;
+}
+
+/** Player preferences (chrome.storage.local key `playerPrefs`). */
+export interface PlayerPrefs {
+  description: boolean; // show the video description under the player
+  sync: boolean;        // frame the signed-in watch page (watch history, account resume); false = embed player
 }
 
 export type LinkInfo =

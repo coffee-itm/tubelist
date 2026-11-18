@@ -13,6 +13,7 @@ it('parses a playable video', () => {
   expect(v?.channel).toBe('Rick Astley');
   expect(v?.durationSec).toBe(213);
   expect(v?.publishedAt?.startsWith('2009-10-2')).toBe(true);
+  expect(v?.description).toContain('Never Gonna Give You Up');
 });
 
 it('returns null for an unavailable video', () => {

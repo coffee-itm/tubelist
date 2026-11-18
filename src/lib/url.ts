@@ -7,6 +7,9 @@ export const playerUrl = (id: string, playlistId?: string) =>
   chrome.runtime.getURL(`${PLAYER_PAGE}?${new URLSearchParams(playlistId ? { v: id, pl: playlistId } : { v: id })}`);
 export const watchUrl = (id: string, start = 0) =>
   `https://www.youtube.com/watch?v=${encodeURIComponent(id)}${start > 0 ? `&t=${Math.floor(start)}s` : ''}`;
+// The embed player takes its resume point as `start`, not `t`, and records no watch history.
+export const embedUrl = (id: string, start = 0) =>
+  `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=1${start > 0 ? `&start=${Math.floor(start)}` : ''}`;
 // watch_videos queues hold at most 50 videos, so longer playlists are truncated.
 export const queueUrl = (ids: string[]): string =>
   'https://www.youtube.com/watch_videos?video_ids=' + ids.slice(0, 50).map(encodeURIComponent).join(',');

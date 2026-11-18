@@ -203,7 +203,7 @@ function list(playlists: Playlist[]): HTMLElement {
       thumb,
       h('div', 'min-w-0 flex-1',
         h('div', 'truncate text-sm font-medium', p.name),
-        h('div', 'text-xs text-zinc-500 dark:text-zinc-400', `${p.videos.length} videos · ${formatDuration(total)}`),
+        h('div', 'text-xs text-zinc-500 dark:text-zinc-400', `${p.videos.length} video${p.videos.length === 1 ? '' : 's'} · ${formatDuration(total)}`),
       ),
       h('span', `shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${colors}`, label),
     );
@@ -274,7 +274,7 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   del.addEventListener('click', async () => {
     const ok = await askConfirm({
       title: 'Delete playlist?',
-      body: `"${p.name}" and its ${p.videos.length} videos are removed from this browser.`,
+      body: `"${p.name}" and its ${p.videos.length} video${p.videos.length === 1 ? '' : 's'} are removed from this browser.`,
       confirm: 'Delete',
     });
     if (!ok) return;

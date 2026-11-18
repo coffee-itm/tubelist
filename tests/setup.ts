@@ -13,6 +13,35 @@ const clone = <T>(v: T): T => (v === undefined ? v : structuredClone(v));
 
 beforeEach(() => map.clear());
 
+// jsdom's HTMLDialogElement exposes only `open`: no show/showModal/close/returnValue, so every app
+// dialog (delete, rename, remove) throws on open and cannot be tested at all. This stands in for the
+// parts `dialog.ts` relies on: modal open, the `close` event, `returnValue`, and the `method="dialog"`
+// submit the platform turns into `close(submitter.value)`. jsdom does fire `submit` for a clicked
+// submit button; it has no implicit submission, so tests submit through the button (or requestSubmit).
+if (typeof HTMLDialogElement !== 'undefined' && typeof HTMLDialogElement.prototype.showModal !== 'function') {
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal = function (this: HTMLDialogElement): void {
+    this.open = true;
+  };
+  proto.show = proto.showModal;
+  proto.close = function (this: HTMLDialogElement & { returnValue?: string }, value?: string): void {
+    if (value !== undefined) this.returnValue = value;
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
+  document.addEventListener(
+    'submit',
+    e => {
+      const form = e.target;
+      if (!(form instanceof HTMLFormElement) || form.method !== 'dialog') return;
+      e.preventDefault();
+      const submitter = (e as SubmitEvent).submitter as HTMLButtonElement | HTMLInputElement | null;
+      form.closest('dialog')?.close(submitter?.value ?? undefined);
+    },
+    true,
+  );
+}
+
 globalThis.chrome = {
   storage: {
     local: {

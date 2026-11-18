@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TubeList",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Save YouTube videos, playlists and queues into local playlists.",
   "browser_specific_settings": {
     "gecko": {
@@ -16,7 +16,7 @@
   "permissions": ["contextMenus", "storage", "declarativeNetRequestWithHostAccess", "scripting", "activeTab"],
   "host_permissions": ["https://www.youtube.com/*"],
   "background": { "scripts": ["background.js"], "type": "module" },
-  "content_scripts": [{ "matches": ["https://www.youtube.com/watch*"], "js": ["frame.js"], "all_frames": true, "run_at": "document_start" }],
+  "content_scripts": [{ "matches": ["https://www.youtube.com/watch*", "https://www.youtube.com/embed/*"], "js": ["frame.js"], "all_frames": true, "run_at": "document_start" }],
   "options_ui": { "page": "settings.html", "open_in_tab": true },
   "action": {
     "default_popup": "popup.html",

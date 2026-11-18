@@ -4,6 +4,26 @@ import { nextSkip, NO_COUNTDOWN, type Countdown, type Prefs, type Segment } from
 // ancestor origin; anything else — an older Firefox, or a reload YouTube starts inside the frame —
 // falls to the handshake, which no other page can answer from this origin. The referrer does not help
 // on Firefox: it sends no moz-extension referrer for the frame (measured on Gecko 158).
+/**
+ * Watch-page trim: the frame shows only the video. Kept off the embed page — see setup().
+ * ytd-popup-container stays visible: it hosts the "still watching?" dialog.
+ */
+const WATCH_CSS = `
+html,body{overflow:hidden!important;background:#000!important}
+#masthead-container,#secondary,#below,#related,#comments,ytd-miniplayer,tp-yt-app-drawer{display:none!important}
+/* Non-fullscreen only. In fullscreen YouTube must own the player and video geometry: it measures its
+   control bar against that box, and overriding it collapses the bar to its 100px minimum in the corner.
+   Both gates are needed because fullscreen lands on <html> while YouTube also flags .ytp-fullscreen. */
+html:not(:fullscreen) #movie_player:not(.ytp-fullscreen){position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important}
+html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain}`;
+
+/** SponsorBlock countdown, used on both page kinds. z-index matches the player's own so it survives the pin. */
+const COUNTDOWN_CSS = `
+#tubelist-countdown{position:fixed;left:16px;bottom:76px;z-index:2147483647;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.84);color:#fff;font:500 13px/1.2 Roboto,arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#tubelist-countdown[hidden]{display:none}
+#tubelist-countdown button{cursor:pointer;border:0;border-radius:6px;padding:4px 10px;background:#fff;color:#000;font:600 12px Roboto,arial,sans-serif}
+#tubelist-countdown button:focus-visible{outline:2px solid #f00;outline-offset:2px}`;
+
 const parentOrigin = chrome.runtime.getURL('').slice(0, -1); // chrome-extension://<id> | moz-extension://<uuid>
 const isFramed = window.top !== window;
 
@@ -16,27 +36,39 @@ else if (isFramed) {
 }
 
 function setup(): void {
-  const style = document.createElement('style');
-  // ytd-popup-container stays visible: it hosts the "still watching?" dialog.
-  style.textContent = `
-html,body{overflow:hidden!important;background:#000!important}
-#masthead-container,#secondary,#below,#related,#comments,ytd-miniplayer,tp-yt-app-drawer{display:none!important}
-/* Non-fullscreen only. In fullscreen YouTube must own the player and video geometry: it measures its
-   control bar against that box, and overriding it collapses the bar to its 100px minimum in the corner.
-   Both gates are needed because fullscreen lands on <html> while YouTube also flags .ytp-fullscreen. */
-html:not(:fullscreen) #movie_player:not(.ytp-fullscreen){position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important}
-html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!important;height:100vh!important;left:0!important;top:0!important;object-fit:contain}
-/* SponsorBlock countdown. z-index matches the player's own so it survives the pinned player. */
-#tubelist-countdown{position:fixed;left:16px;bottom:76px;z-index:2147483647;display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.84);color:#fff;font:500 13px/1.2 Roboto,arial,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.4)}
-#tubelist-countdown[hidden]{display:none}
-#tubelist-countdown button{cursor:pointer;border:0;border-radius:6px;padding:4px 10px;background:#fff;color:#000;font:600 12px Roboto,arial,sans-serif}
-#tubelist-countdown button:focus-visible{outline:2px solid #f00;outline-offset:2px}`;
-  document.documentElement.append(style);
+  // `/watch?v=ID` and the embed player's `/embed/ID` both run this script.
+  const videoId = (): string | null =>
+    new URLSearchParams(location.search).get('v') ??
+    location.pathname.match(/^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})(?:\/|$)/)?.[1] ??
+    null;
+
+  // Injected by the service worker as an extension stylesheet (chrome.scripting.insertCSS) rather than a
+  // <style> node: YouTube rebuilds its document while booting, so a node added here at document_start is
+  // dropped, and a node on <html> before <head> exists leaves /embed/ stuck at readyState "loading"
+  // (black frame). The embed player keeps its own layout anyway — it paints the control bar under
+  // #movie_player, so the watch page's fixed pin would cover the controls.
+  // Callback form, not the promise one: Firefox's `chrome.*` namespace is not documented to return a
+  // promise, and a throw here would take the rest of setup() (media reporting, the skip loop) with it.
+  chrome.runtime.sendMessage?.(
+    {
+      type: 'tl:css',
+      css: location.pathname.startsWith('/embed/') ? COUNTDOWN_CSS : WATCH_CSS + COUNTDOWN_CSS,
+    },
+    () => void chrome.runtime.lastError, // a worker that is not there: CSS is cosmetic, nothing to report
+  );
   document.addEventListener('DOMContentLoaded', () => window.dispatchEvent(new Event('resize')), { once: true });
   // YouTube lays its control bar out during the fullscreen transition; nudge it once the state settles.
   document.addEventListener('fullscreenchange', () => window.dispatchEvent(new Event('resize')));
 
-  // ponytail: no parent→frame commands; add a message listener if TubeList needs play/seek control.
+  // The player page is a cross-origin embedder: the <video> is only reachable from inside this frame.
+  // ponytail: pause is the only command so far; play/seek go here when something needs them.
+  window.addEventListener('message', e => {
+    if (e.origin !== parentOrigin) return;
+    const m = e.data as { tubelist?: number; cmd?: string } | null;
+    if (m?.tubelist !== 3 || m.cmd !== 'pause') return;
+    const v = document.querySelector('video');
+    if (v instanceof HTMLVideoElement) v.pause();
+  });
   let adTailUntil = 0; // the ad's own ended/pause must never be reported as the video's
   const report = (e: Event): void => {
     const v = e.target;
@@ -44,7 +76,7 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
     if (Date.now() < adTailUntil) return;
     if (document.getElementById('movie_player')?.classList.contains('ad-showing')) return; // preroll shares the <video>
     window.parent.postMessage(
-      { tubelist: 1, id: new URLSearchParams(location.search).get('v'), t: v.currentTime, d: v.duration, state: e.type },
+      { tubelist: 1, id: videoId(), t: v.currentTime, d: v.duration, state: e.type },
       parentOrigin,
     );
   };
@@ -111,7 +143,7 @@ html:not(:fullscreen) #movie_player:not(.ytp-fullscreen) video{width:100vw!impor
   /** One fetch per video id; called from the loop, so it also notices SPA navigation. */
   function ensureSegments(): void {
     if (Date.now() < retryAt) return;
-    const id = new URLSearchParams(location.search).get('v');
+    const id = videoId();
     if (id && id !== segsFor) void loadSegments(id);
   }
 
