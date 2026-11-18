@@ -29,9 +29,14 @@ const isFramed = window.top !== window;
 
 if (isFramed && location.ancestorOrigins?.[0] === parentOrigin) setup();
 else if (isFramed) {
-  window.addEventListener('message', e => {
-    if (e.origin === parentOrigin && (e.data as { tubelist?: number } | null)?.tubelist === 2) setup();
-  }, { once: true });
+  // Not `once`: YouTube posts messages to its own window while booting, and consuming the listener
+  // on one of those would leave the frame without progress or SponsorBlock for the whole page.
+  const onHello = (e: MessageEvent): void => {
+    if (e.origin !== parentOrigin || (e.data as { tubelist?: number } | null)?.tubelist !== 2) return;
+    window.removeEventListener('message', onHello);
+    setup();
+  };
+  window.addEventListener('message', onHello);
   window.parent.postMessage({ tubelist: 1 }, parentOrigin);
 }
 

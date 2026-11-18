@@ -13,6 +13,12 @@ const clone = <T>(v: T): T => (v === undefined ? v : structuredClone(v));
 
 beforeEach(() => map.clear());
 
+// jsdom has no object URLs, and the settings page's export path only needs them to exist and be revocable.
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => 'blob:test';
+  URL.revokeObjectURL = () => {};
+}
+
 // jsdom's HTMLDialogElement exposes only `open`: no show/showModal/close/returnValue, so every app
 // dialog (delete, rename, remove) throws on open and cannot be tested at all. This stands in for the
 // parts `dialog.ts` relies on: modal open, the `close` event, `returnValue`, and the `method="dialog"`
@@ -45,7 +51,17 @@ if (typeof HTMLDialogElement !== 'undefined' && typeof HTMLDialogElement.prototy
 globalThis.chrome = {
   storage: {
     local: {
-      get: async (key: string) => (map.has(key) ? { [key]: clone(map.get(key)) } : {}),
+      // Like the browser: a string key, a list of keys, or null/undefined for everything.
+      get: async (key?: string | string[] | null) => {
+        const keys = key == null ? [...map.keys()] : Array.isArray(key) ? key : [key];
+        return Object.fromEntries(keys.filter(k => map.has(k)).map(k => [k, clone(map.get(k))]));
+      },
+      clear: async () => {
+        const changes: Record<string, Change> = {};
+        for (const [k, v] of map) changes[k] = { oldValue: clone(v) };
+        map.clear();
+        if (Object.keys(changes).length) for (const l of [...listeners]) l(changes, 'local');
+      },
       set: async (obj: Record<string, unknown>) => {
         const changes: Record<string, Change> = {};
         for (const [k, v] of Object.entries(obj)) {

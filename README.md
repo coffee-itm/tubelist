@@ -6,17 +6,17 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 
 | Metric | Value |
 | --- | --- |
-| Version | `0.4.0` (Manifest V3) |
+| Version | `0.5.0` (Manifest V3) |
 | Targets | Chromium (`dist/`), Firefox 140+ (`dist-firefox/`) |
-| Source files | 17 TypeScript (+1 stylesheet) |
-| Source lines | ~2,290 |
-| Tests | 140 across 16 vitest suites |
+| Source files | 18 TypeScript (+1 stylesheet) |
+| Source lines | ~2,460 |
+| Tests | 145 across 17 vitest suites |
 | Runtime dependencies | **0** |
 | License | MIT |
 | Dev dependencies | 7 (`vite`, `typescript`, `vitest`, `jsdom`, `tailwindcss` ×2, `@types/chrome`) |
-| Bundle size | ~86 KB unpacked (`dist/`) |
-| Tracked files | 61 |
-| Commits | 34 |
+| Bundle size | ~90 KB unpacked (`dist/`) |
+| Tracked files | 63 |
+| Commits | 35 |
 
 ## ✨ Features
 
@@ -34,6 +34,7 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 - 📤 **Share a playlist** — the popup copies a YouTube `watch_videos` queue link for the playlist (first 50 videos); anyone can open it as a temporary YouTube playlist, and another TubeList user can right-click it → *Add to TubeList*.
 - ⏭️ **SponsorBlock skipping** — crowd-sourced sponsor, self-promotion, engagement, intro, outro, preview and non-music segments are skipped inside the frame. *Off-topic filler* is offered but **off by default**, and highlights are not offered at all: the database stores them as a single moment, with no span to cut. Every category has its own toggle (plus a 3-second sponsor countdown) in *Settings* → SponsorBlock.
 - 💾 **Local-first playlists** — playlists live in `chrome.storage.local`. No account, no server, nothing leaves your machine.
+- 🧳 **Export, import, clear** — *Settings* → Data writes every playlist, video, watch position and setting to one JSON file, reads such a file back (replacing what is stored — it is not a merge) or clears all of it after a confirm. The file is produced by the browser itself: nothing is uploaded, and a clear cannot be undone.
 
 ## ⚙️ How it works
 
@@ -120,7 +121,7 @@ The `.zip` uploaded to addons.mozilla.org is `dist-firefox/` and nothing else, b
 
 ```sh
 pnpm install --frozen-lockfile   # pnpm 11.13.1, Node 20 or newer (see package.json)
-pnpm test                        # 140 tests, 16 suites
+pnpm test                        # 145 tests, 17 suites
 pnpm build:firefox               # typecheck + vite build --mode firefox
 pnpm dlx web-ext lint --source-dir dist-firefox   # 0 errors, 0 warnings
 pnpm dlx web-ext build --source-dir dist-firefox --artifacts-dir . --overwrite-dest

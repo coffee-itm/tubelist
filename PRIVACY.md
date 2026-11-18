@@ -12,6 +12,10 @@ browser's own local storage (`storage.local`) on your machine. They are never up
 else. Removing the extension removes them. Nothing in the extension reads your YouTube account, your
 cookies, your history or any other browsing data.
 
+*Settings* → **Data** puts that storage under your control: *Export* downloads it as a JSON file you keep
+yourself, *Import* replaces it with the contents of such a file, and *Clear all data* removes it. All three
+run inside the extension page and make no network request.
+
 ## What the extension sends over the network
 
 | Destination | What is sent | Why |

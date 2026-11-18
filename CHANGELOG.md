@@ -5,6 +5,17 @@ All notable changes to TubeList are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-11-18
+
+### Added
+
+- **Settings → Data: back up, restore and clear.** *Export* writes every playlist, video, watch position
+  and setting to one JSON file (a blob download from the page, no network); *Import* replaces the stored
+  data with the contents of such a file, refusing anything without the `tubelist` marker or with
+  playlists or videos that are not shaped like the ones the app renders, and leaving keys the file does
+  not carry alone; *Clear all data* empties `chrome.storage.local` behind a confirm dialog.
+  `src/lib/backup.ts` holds the format, the validation and the two writes.
+
 ## [0.4.0] — 2026-11-18
 
 Playback can now run on YouTube's own embed player, and the player page grew the

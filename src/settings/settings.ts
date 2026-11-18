@@ -1,6 +1,8 @@
 import '../styles.css';
 import { h } from '../lib/dom';
 import { getPlayerPrefs, getSkipPrefs, setPlayerPrefs, setSkipPrefs, SKIP_OPTIONS } from '../lib/store';
+import { backup, clearAll, restore } from '../lib/backup';
+import { askConfirm } from '../lib/dialog';
 import type { PlayerPrefs, SkipPrefs } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
@@ -10,9 +12,40 @@ const H2 = 'px-2 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-50
 const NOTE = 'px-4 py-3 text-xs text-zinc-500 dark:text-zinc-400';
 const ON = 'bg-green-500';
 const OFF = 'bg-zinc-300 dark:bg-zinc-700';
+const BTN = `rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800 ${FOCUS}`;
+const DANGER = `rounded-lg border border-red-300 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950 ${FOCUS}`;
 
 let skip: SkipPrefs;
 let player: PlayerPrefs;
+let status = '';
+let statusEl: HTMLElement;
+
+const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+
+/** Writes the line in place: a full re-render here would drop the focus the user is standing on. */
+function setStatus(text: string): void {
+  status = text;
+  statusEl.textContent = text;
+  statusEl.classList.toggle('hidden', text === '');
+}
+
+/** A blob URL on a throwaway anchor. Revoked a task later: the click's action must be dispatched first. */
+function download(name: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  const a = h('a');
+  a.href = url;
+  a.download = name;
+  document.body.append(a); // Firefox ignores a click on a detached anchor
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** After an import or a clear the switches have to show the stored values again, not the old ones. */
+async function refresh(): Promise<void> {
+  [skip, player] = await Promise.all([getSkipPrefs(), getPlayerPrefs()]);
+  render();
+}
 
 const logo = (): HTMLImageElement => {
   const img = h('img');
@@ -53,6 +86,8 @@ function switchRow(label: string, isOn: () => boolean, onChange: (next: boolean)
 }
 
 function render(): void {
+  statusEl = h('p', `px-2 pb-1 text-xs text-zinc-500 dark:text-zinc-400 ${status ? '' : 'hidden'}`, status);
+  statusEl.setAttribute('role', 'status'); // a live region: the result of an import lands here, off-focus
   app.replaceChildren(
     h('header', HEADER, logo(), h('span', 'font-semibold', 'TubeList settings')),
     h('section', 'p-2',
@@ -85,7 +120,66 @@ function render(): void {
       h('p', NOTE,
         'On, the player frames the signed-in youtube.com/watch page: YouTube records watch history and the resume position. Off (default), it uses the embed player, which records neither. Playlists, local progress bars and SponsorBlock skipping work either way.'),
     ),
+    h('section', 'p-2',
+      h('h2', H2, 'Data'),
+      dataRows(),
+      statusEl,
+      h('p', NOTE,
+        'A backup is one JSON file with your playlists, videos, watch progress and settings. Import replaces the stored data with the file\'s; it is not a merge.'),
+    ),
   );
+}
+
+function dataRows(): HTMLElement {
+  const exportBtn = h('button', BTN, 'Export');
+  exportBtn.type = 'button';
+  exportBtn.addEventListener('click', async () => {
+    try {
+      download(`tubelist-${new Date().toISOString().slice(0, 10)}.json`, await backup());
+      setStatus('Backup downloaded.');
+    } catch (e) {
+      setStatus(`Export failed: ${message(e)}`);
+    }
+  });
+
+  const file = h('input', 'hidden');
+  file.type = 'file';
+  file.accept = 'application/json,.json';
+  file.addEventListener('change', () => {
+    const picked = file.files?.[0];
+    if (!picked) return;
+    void picked.text().then(async text => {
+      try {
+        const playlists = await restore(text);
+        const videos = playlists.reduce((n, p) => n + p.videos.length, 0);
+        setStatus(`Imported ${playlists.length} playlist${playlists.length === 1 ? '' : 's'} with ${videos} video${videos === 1 ? '' : 's'}.`);
+      } catch (e) {
+        setStatus(`Import failed: ${message(e)}`);
+      }
+      file.value = ''; // the same file twice in a row is still a change
+      await refresh(); // the switches and the status line still hold the pre-import values otherwise
+    });
+  });
+
+  const importBtn = h('button', BTN, 'Import');
+  importBtn.type = 'button';
+  importBtn.addEventListener('click', () => file.click());
+
+  const clearBtn = h('button', DANGER, 'Clear all data');
+  clearBtn.type = 'button';
+  clearBtn.addEventListener('click', async () => {
+    const ok = await askConfirm({
+      title: 'Clear all data?',
+      body: 'Deletes every playlist, video, watch progress and setting TubeList stores on this device. It cannot be undone, so export a backup first if you may want any of it back.',
+      confirm: 'Clear data',
+    });
+    if (!ok) return;
+    await clearAll();
+    setStatus('All TubeList data cleared.');
+    await refresh();
+  });
+
+  return h('div', 'flex flex-wrap items-center gap-2 px-2 py-1', exportBtn, importBtn, clearBtn, file);
 }
 
 void Promise.all([getSkipPrefs(), getPlayerPrefs()]).then(([s, p]) => {

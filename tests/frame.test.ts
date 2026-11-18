@@ -23,6 +23,8 @@ beforeAll(async () => {
   // would make every tick after a segment lookup race it; the value never reaches an assertion.
   vi.stubGlobal('crypto', { subtle: { digest: async () => new ArrayBuffer(32) } });
   await import('../src/frame');
+  // YouTube posts messages into its own window while booting; one of those must not eat the handshake.
+  window.dispatchEvent(new MessageEvent('message', { origin: 'https://www.youtube.com', data: { type: 'yt-action' } }));
   // The player page answers the embedder handshake; only then does the frame set itself up.
   window.dispatchEvent(new MessageEvent('message', { origin: parentOrigin, data: { tubelist: 2 } }));
 });
