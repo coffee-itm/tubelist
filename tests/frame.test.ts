@@ -54,6 +54,10 @@ const videoAt = (time: number, duration = 100): HTMLVideoElement => {
 
 const countdownBox = (): HTMLElement | null => document.getElementById('tubelist-countdown');
 
+it('asks the player page for the loop mode as soon as it sets up', () => {
+  expect(posted).toContainEqual({ tubelist: 5 });
+});
+
 it('reports progress from a watch page with its `v` parameter', () => {
   window.history.replaceState(null, '', '/watch?v=9bZkp7q19f0');
   expect(reportAt(12)).toMatchObject({ tubelist: 1, id: '9bZkp7q19f0', t: 12, d: 100, state: 'timeupdate' });
@@ -72,6 +76,19 @@ it('reports completion in a hidden tab even when media events are missed', async
   await vi.advanceTimersByTimeAsync(1000);
   expect(posted).toContainEqual(expect.objectContaining({ id: 'dQw4w9WgXcQ', state: 'ended' }));
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  v.remove();
+});
+
+it('repeats loop one with a native `video.loop`, so a hidden tab keeps playing', () => {
+  window.history.replaceState(null, '', '/embed/dQw4w9WgXcQ?autoplay=1');
+  segmentsFor = null; // no SponsorBlock seek to interfere with the media flag
+  const v = videoAt(10);
+  window.dispatchEvent(new MessageEvent('message', { origin: parentOrigin, data: { tubelist: 4, loop: 'one' } }));
+  expect(v.loop).toBe(true);
+  window.dispatchEvent(new MessageEvent('message', { origin: parentOrigin, data: { tubelist: 4, loop: 'all' } }));
+  expect(v.loop).toBe(false); // only loop one is native; loop all still swaps the frame
+  window.dispatchEvent(new MessageEvent('message', { origin: parentOrigin, data: { tubelist: 4, loop: 'one' } }));
+  expect(v.loop).toBe(true);
   v.remove();
 });
 it('pauses the media when the player page asks it to, and ignores other senders', () => {

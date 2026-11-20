@@ -5,6 +5,12 @@ All notable changes to TubeList are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] — 2026-11-20
+
+### Fixed
+
+- **Loop one repeats while the player tab is in the background.** Loop *one* is now a native `video.loop` on the YouTube media element, so the browser repeats the video itself — no JavaScript timer and no need for the player tab to be active. The previous approach relied on the tab noticing the end and reloading the frame, and a hidden tab throttles exactly that, which is why looping seemed to resume only after the tab was reopened. The player page now sends the loop mode to the frame, and the frame asks for it on every load.
+
 ## [0.5.1] — 2026-11-20
 
 ### Fixed

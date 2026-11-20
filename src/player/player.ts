@@ -57,6 +57,9 @@ async function start(firstId: string): Promise<void> {
       ? 'Loop off — click for loop all'
       : loop === 'all' ? 'Loop all — click for loop one' : 'Loop one — click to turn loop off';
   };
+  // The frame owns no playlist, so it only needs the mode: loop *one* becomes a native `video.loop`
+  // there and repeats with no timer while this tab is hidden. It asks for the mode on every load.
+  const pushLoop = (): void => iframe.contentWindow?.postMessage({ tubelist: 4, loop }, 'https://www.youtube.com');
   const renderSync = (): void => {
     syncBtn.className = `${BTN} ${prefs.sync ? ON : OFF}`;
     syncBtn.replaceChildren(icon(YOUTUBE_ICON), document.createTextNode(prefs.sync ? 'YouTube sync: on' : 'YouTube sync: off'));
@@ -69,6 +72,7 @@ async function start(firstId: string): Promise<void> {
     loop = loop === 'off' ? 'all' : loop === 'all' ? 'one' : 'off';
     localStorage.setItem('loop', loop);
     renderLoop();
+    pushLoop();
   });
   syncBtn.addEventListener('click', () => {
     prefs = { ...prefs, sync: !prefs.sync };
@@ -297,6 +301,10 @@ async function start(firstId: string): Promise<void> {
   window.addEventListener('message', e => {
     if (e.origin !== 'https://www.youtube.com' || e.source !== iframe.contentWindow) return;
     const m = e.data as { tubelist?: number; id?: string; t?: number; d?: number; state?: string } | null;
+    if (m?.tubelist === 5) {
+      pushLoop(); // a freshly loaded frame asks for the mode, so it can arm native looping itself
+      return;
+    }
     if (!m || m.tubelist !== 1 || m.id !== currentId) return; // Drop YouTube SPA navigation to another video.
     if (typeof m.t === 'number') live.t = m.t;
     if (typeof m.d === 'number' && Number.isFinite(m.d) && m.d > 0) live.d = m.d;

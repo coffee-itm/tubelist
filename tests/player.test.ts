@@ -253,3 +253,25 @@ it('counts a sleep timer down and pauses the frame when it runs out', () => {
   expect(sleepBtn.textContent).toBe('Sleep off');
   vi.useRealTimers();
 });
+
+/** The mode the Loop button currently shows, so these tests do not depend on the order of the others. */
+const loopMode = (): string => {
+  const label = toolbarButtons('Loop ').textContent ?? '';
+  return label.includes('one') ? 'one' : label.includes('all') ? 'all' : 'off';
+};
+
+it('tells the frame the loop mode so it can loop natively while this tab is hidden', () => {
+  const post = vi.spyOn(iframe().contentWindow!, 'postMessage');
+  toolbarButtons('Loop ').click();
+  expect(post).toHaveBeenCalledWith({ tubelist: 4, loop: loopMode() }, 'https://www.youtube.com');
+  post.mockRestore();
+});
+
+it('answers a frame that asks which loop mode to use', () => {
+  const post = vi.spyOn(iframe().contentWindow!, 'postMessage');
+  window.dispatchEvent(new MessageEvent('message', {
+    origin: 'https://www.youtube.com', source: iframe().contentWindow, data: { tubelist: 5 },
+  }));
+  expect(post).toHaveBeenCalledWith({ tubelist: 4, loop: loopMode() }, 'https://www.youtube.com');
+  post.mockRestore();
+});

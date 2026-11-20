@@ -33,11 +33,11 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 
 | Metric | Value |
 | --- | --- |
-| Version | `0.5.0` (Manifest V3) |
+| Version | `0.5.2` (Manifest V3) |
 | Targets | Chromium (`dist/`), Firefox 140+ (`dist-firefox/`) |
 | Source files | 18 TypeScript (+1 stylesheet) |
 | Source lines | ~2,460 |
-| Tests | 145 across 17 vitest suites |
+| Tests | 166 across 17 vitest suites |
 | Runtime dependencies | **0** |
 | License | MIT |
 | Dev dependencies | 7 (`vite`, `typescript`, `vitest`, `jsdom`, `tailwindcss` ×2, `@types/chrome`) |

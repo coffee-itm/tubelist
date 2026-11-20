@@ -65,10 +65,27 @@ function setup(): void {
   // YouTube lays its control bar out during the fullscreen transition; nudge it once the state settles.
   document.addEventListener('fullscreenchange', () => window.dispatchEvent(new Event('resize')));
 
+  // Loop *one* is a native `video.loop` on the media element, so the browser repeats the video itself:
+  // no timer and no visible tab, which is what a background player tab needs. Loop *all* still swaps the
+  // frame from the player page, the only side that knows the playlist order. The player owns the mode.
+  let loopMode: 'off' | 'all' | 'one' = 'off';
+  const applyLoop = (): void => {
+    const ad = !!document.getElementById('movie_player')?.classList.contains('ad-showing');
+    for (const el of document.querySelectorAll('video')) {
+      if (el instanceof HTMLVideoElement) el.loop = !ad && loopMode === 'one';
+    }
+  };
+  window.parent.postMessage({ tubelist: 5 }, parentOrigin); // ask the player for the current mode
+
   // The player page cannot inspect this cross-origin frame; answer its visibility-resume query locally.
   window.addEventListener('message', e => {
     if (e.origin !== parentOrigin) return;
-    const m = e.data as { tubelist?: number; cmd?: string } | null;
+    const m = e.data as { tubelist?: number; cmd?: string; loop?: string } | null;
+    if (m?.tubelist === 4) {
+      loopMode = m.loop === 'one' ? 'one' : m.loop === 'all' ? 'all' : 'off';
+      applyLoop();
+      return;
+    }
     if (m?.tubelist !== 3) return;
     const v = document.querySelector('video');
     if (!(v instanceof HTMLVideoElement)) return;
@@ -281,6 +298,7 @@ function setup(): void {
       return;
     }
     adNudged = false;
+    applyLoop(); // keep it on after an ad or a source swap, and off in the other modes
     void prefsRead.then(ensureSegments);
     skipPass(v);
   }, 500);
