@@ -2,6 +2,16 @@
 
 A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that turns YouTube videos, playlists and queues into your own local playlists — and plays them through the **real YouTube watch page**, so every play lands in your **YouTube watch history** and resume position, exactly like watching on youtube.com.
 
+## Screenshots
+
+![TubeList player](screenshots/player.png)
+
+![TubeList playlist](screenshots/playlists.png)
+
+![TubeList playlist contents](screenshots/music-playlist.png)
+
+![TubeList settings](screenshots/settings.png)
+
 ## 📊 Stats
 
 | Metric | Value |
