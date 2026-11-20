@@ -33,7 +33,7 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 
 | Metric | Value |
 | --- | --- |
-| Version | `0.5.2` (Manifest V3) |
+| Version | `0.5.3` (Manifest V3) |
 | Targets | Chromium (`dist/`), Firefox 140+ (`dist-firefox/`) |
 | Source files | 18 TypeScript (+1 stylesheet) |
 | Source lines | ~2,460 |

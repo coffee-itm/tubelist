@@ -319,14 +319,11 @@ async function start(firstId: string): Promise<void> {
   });
   const handleFinished = (): void => {
     if (loop === 'off' || handledEnd || live.d <= 0 || live.t < live.d - 0.5) return;
+    // Loop one is a native `video.loop` in the frame. Reloading the embed here used to tear the media down
+    // a fraction of a second before its own end — before it could repeat — and YouTube refuses to
+    // re-initialise the player while the tab is hidden, so the loop stalled until the tab was opened.
+    if (loop === 'one') return;
     handledEnd = true;
-    if (loop === 'one') {
-      progress[currentId] = { t: 0, d: live.d, done: true };
-      // ponytail: a fresh URL forces a same-video reload; background autoplay still depends on browser policy.
-      iframe.src = 'about:blank';
-      show(currentId);
-      return;
-    }
     const i = loopList ? loopList.videos.findIndex(v => v.id === currentId) : -1;
     show(i > -1 ? loopList!.videos[(i + 1) % loopList!.videos.length].id : currentId);
   };

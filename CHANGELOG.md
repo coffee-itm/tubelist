@@ -5,6 +5,24 @@ All notable changes to TubeList are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.3] — 2026-11-20
+
+### Fixed
+
+- **Loop one now actually repeats in a background tab.** The player page used to reload the whole embed
+  when the video finished, roughly half a second before its own end and therefore before the media
+  element could loop. That reload tore the video down, and because YouTube will not re-initialise its
+  player while a tab is hidden, the repeat only appeared once the tab was reopened. Loop *one* now leaves
+  the frame untouched and lets the native `video.loop` that `src/frame.ts` sets repeat it. Verified in a
+  real Chromium tab playing in the background.
+
+### Known limitation
+
+- **Loop all still needs the player tab to be visible to start the next video.** The player advances the
+  queue and swaps the frame as before, but a freshly loaded YouTube embed stays buffering while its tab
+  is hidden and only starts playing once the tab is shown again. That is YouTube/browser behaviour, not
+  something the extension can drive from the embed. Loop *one* is unaffected.
+
 ## [0.5.2] — 2026-11-20
 
 ### Fixed

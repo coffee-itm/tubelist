@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TubeList",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Save YouTube videos, playlists and queues into local playlists.",
   "permissions": ["contextMenus", "storage", "declarativeNetRequestWithHostAccess", "scripting", "activeTab"],
   "host_permissions": ["https://www.youtube.com/*"],

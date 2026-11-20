@@ -178,8 +178,9 @@ it('advances loop all while the player tab stays hidden when the frame reports c
   await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + B));
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
-it('replays loop one while the player tab stays hidden', async () => {
+it('leaves the frame in place on loop one so the native video.loop can repeat it while hidden', async () => {
   rowOf('Video A').click();
+  await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + A));
   const loopBtn = toolbarButtons('Loop ');
   if (loopBtn.textContent === 'Loop off') loopBtn.click();
   if (loopBtn.textContent === 'Loop all') loopBtn.click();
@@ -187,12 +188,13 @@ it('replays loop one while the player tab stays hidden', async () => {
   const navigations: string[] = [];
   const original = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src')!;
   Object.defineProperty(iframe(), 'src', { configurable: true, get() { return original.get!.call(this); }, set(url: string) { navigations.push(url); original.set!.call(this, url); } });
+  const src = iframe().src;
   window.dispatchEvent(new MessageEvent('message', {
     origin: 'https://www.youtube.com', source: iframe().contentWindow,
     data: { tubelist: 1, id: A, t: 60, d: 60, state: 'ended' },
   }));
-  expect(navigations).toEqual(['about:blank', 'https://www.youtube.com/embed/' + A + '?autoplay=1']);
-  expect(iframe().src).toContain('/embed/' + A);
+  expect(navigations).toEqual([]);
+  expect(iframe().src).toBe(src);
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
 });
 it('ignores what the frame reports for another video', async () => {
