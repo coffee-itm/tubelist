@@ -4,13 +4,30 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 
 ## Screenshots
 
-![TubeList player](screenshots/player.png)
-
-![TubeList playlist](screenshots/playlists.png)
-
-![TubeList playlist contents](screenshots/music-playlist.png)
-
-![TubeList settings](screenshots/settings.png)
+<table>
+  <tr>
+    <td colspan="2" align="center">
+      <strong>Player</strong><br>
+      <img src="screenshots/player.png" alt="TubeList video player with playlist queue" width="900">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>Playlists</strong><br>
+      <img src="screenshots/playlists.png" alt="TubeList saved playlists" width="300">
+    </td>
+    <td align="center" width="50%">
+      <strong>Playlist contents</strong><br>
+      <img src="screenshots/music-playlist.png" alt="Videos in the Music playlist" width="300">
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <strong>Settings</strong><br>
+      <img src="screenshots/settings.png" alt="TubeList settings for SponsorBlock, player and data" width="320">
+    </td>
+  </tr>
+</table>
 
 ## 📊 Stats
 
