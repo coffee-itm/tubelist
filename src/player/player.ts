@@ -284,7 +284,8 @@ async function start(firstId: string): Promise<void> {
   }
 
   let lastSave = 0;
-  let live = { t: 0, d: 0 };
+  let live = { t: 0, d: 0, state: '' };
+  let handledEnd = false;
   const save = (ended: boolean): void => {
     const id = currentId;
     void setProgress(id, live.t, live.d, ended).then(p => {
@@ -296,37 +297,45 @@ async function start(firstId: string): Promise<void> {
   window.addEventListener('message', e => {
     if (e.origin !== 'https://www.youtube.com' || e.source !== iframe.contentWindow) return;
     const m = e.data as { tubelist?: number; id?: string; t?: number; d?: number; state?: string } | null;
-    if (!m || m.tubelist !== 1 || m.id !== currentId) return; // id check drops YouTube's own SPA navigation to another video
+    if (!m || m.tubelist !== 1 || m.id !== currentId) return; // Drop YouTube SPA navigation to another video.
     if (typeof m.t === 'number') live.t = m.t;
     if (typeof m.d === 'number' && Number.isFinite(m.d) && m.d > 0) live.d = m.d;
-    const ended = m.state === 'ended';
-    // YouTube's end screen can hold the media at `duration` without the `ended` event reaching us
-    // (the embed shows its replay overlay there). Near-end counts as finished while looping, so the
-    // playlist keeps moving instead of stalling on that overlay.
-    const finished = ended || (live.d > 0 && live.t >= live.d - 0.5);
-    if (ended || m.state === 'pause' || Date.now() - lastSave > 5000 || (finished && loop !== 'off')) {
+    live.state = m.state ?? live.state;
+    if (live.t < live.d - 0.5) handledEnd = false;
+    const finished = live.state === 'ended' || (live.d > 0 && live.t >= live.d - 0.5);
+    if (live.state === 'ended' || m.state === 'pause' || Date.now() - lastSave > 5000 || (finished && loop !== 'off')) {
       lastSave = Date.now();
-      save(ended || (finished && loop !== 'off'));
+      save(live.state === 'ended' || (finished && loop !== 'off'));
     }
-    if (!finished || loop === 'off') return;
+    if (finished) handleFinished();
+  });
+  const handleFinished = (): void => {
+    if (loop === 'off' || handledEnd || live.d <= 0 || live.t < live.d - 0.5) return;
+    handledEnd = true;
     if (loop === 'one') {
-      // save() is async: mark local progress watched so show() does not resume at the end.
       progress[currentId] = { t: 0, d: live.d, done: true };
+      // ponytail: a fresh URL forces a same-video reload; background autoplay still depends on browser policy.
+      iframe.src = 'about:blank';
       show(currentId);
       return;
     }
     const i = loopList ? loopList.videos.findIndex(v => v.id === currentId) : -1;
     show(i > -1 ? loopList!.videos[(i + 1) % loopList!.videos.length].id : currentId);
-  });
-  // The player page is the "left off here" moment; hidden tab or unload.
+  };
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') save(false);
+    if (document.visibilityState === 'hidden') {
+      save(false);
+      return;
+    }
+    iframe.contentWindow?.postMessage({ tubelist: 3, cmd: 'report' }, 'https://www.youtube.com');
   });
   window.addEventListener('pagehide', () => save(false));
 
   const show = (id: string): void => {
+    if (currentId !== id && live.d > 0) save(false);
     currentId = id;
-    live = { t: 0, d: 0 };
+    live = { t: 0, d: 0, state: '' };
+    handledEnd = false;
     const stored = progress[id];
     // ponytail: resume source is local progress; reading the account's resume position is not implemented.
     const resumeAt = stored && !stored.done && stored.t > 3 ? stored.t : 0;

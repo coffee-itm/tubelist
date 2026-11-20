@@ -5,6 +5,15 @@ All notable changes to TubeList are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] — 2026-11-20
+
+### Fixed
+
+- **Background looping.** The frame checks for ended playback while the player tab is hidden; loop all advances and loop one reloads the same video. Returning to the tab also requests fresh playback state. Browser autoplay policy can still prevent playback.
+- **Playlist refresh safety.** Incomplete metadata fetches no longer replace an existing playlist with a partial result.
+- **Progress reliability.** Progress writes and orphan pruning share the background worker queue; switching videos saves the current position.
+- **Input validation.** Reject malformed store operations, invalid backup preferences/progress, and URLs outside supported YouTube paths. Ignore CSS requests from top-level YouTube tabs.
+
 ## [0.5.0] — 2026-11-18
 
 ### Added

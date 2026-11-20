@@ -1,5 +1,5 @@
 import type { Playlist, PlaylistKind, PlayerPrefs, SkipPrefs, Video } from './types';
-import { PROGRESS_KEY } from './progress';
+import { PROGRESS_KEY, withProgressLock } from './progress';
 
 const KEY = 'playlists';
 
@@ -103,21 +103,46 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
   }
 }
 
+const isVideo = (v: unknown): v is Video => !!v && typeof v === 'object'
+  && typeof (v as Video).id === 'string' && typeof (v as Video).title === 'string'
+  && typeof (v as Video).channel === 'string' && typeof (v as Video).thumbnail === 'string'
+  && (typeof (v as Video).durationSec === 'number' || (v as Video).durationSec === null)
+  && (typeof (v as Video).publishedAt === 'string' || (v as Video).publishedAt === null)
+  && typeof (v as Video).addedAt === 'number';
+
+function validOp(op: StoreOp): boolean {
+  switch (op.op) {
+    case 'save': return !!op.input && typeof op.input.name === 'string'
+      && ['custom', 'youtube', 'queue'].includes(op.input.kind)
+      && (op.input.sourceId === null || typeof op.input.sourceId === 'string')
+      && Array.isArray(op.input.videos) && op.input.videos.every(isVideo);
+    case 'addVideo': return typeof op.playlistId === 'string' && isVideo(op.video);
+    case 'addToSaved': return isVideo(op.video);
+    case 'removeVideo': return typeof op.playlistId === 'string' && typeof op.videoId === 'string';
+    case 'moveVideo': return typeof op.playlistId === 'string' && Number.isInteger(op.from) && Number.isInteger(op.to);
+    case 'rename': return typeof op.playlistId === 'string' && typeof op.name === 'string';
+    case 'delete': return typeof op.playlistId === 'string';
+    default: return false;
+  }
+}
+
 /** Progress rows for videos no playlist holds any more. Never touches a row another playlist still needs. */
 async function pruneProgress(ids: string[], playlists: Playlist[]): Promise<void> {
   const held = new Set(playlists.flatMap(p => p.videos.map(v => v.id)));
   const orphans = ids.filter(id => !held.has(id));
   if (orphans.length === 0) return;
-  const res = await chrome.storage.local.get(PROGRESS_KEY);
-  const all = (res[PROGRESS_KEY] as Record<string, unknown> | undefined) ?? {};
-  let changed = false;
-  for (const id of orphans) {
-    if (id in all) {
-      delete all[id];
-      changed = true;
+  await withProgressLock(async () => {
+    const res = await chrome.storage.local.get(PROGRESS_KEY);
+    const all = (res[PROGRESS_KEY] as Record<string, unknown> | undefined) ?? {};
+    let changed = false;
+    for (const id of orphans) {
+      if (id in all) {
+        delete all[id];
+        changed = true;
+      }
     }
-  }
-  if (changed) await chrome.storage.local.set({ [PROGRESS_KEY]: all });
+    if (changed) await chrome.storage.local.set({ [PROGRESS_KEY]: all });
+  });
 }
 
 async function runOp(op: StoreOp): Promise<OpOutcome> {
@@ -148,6 +173,7 @@ function enqueue(op: StoreOp): Promise<OpOutcome> {
 export function handleStoreMessage(message: unknown, _sender: unknown, respond: (response: Envelope) => void): boolean {
   const m = message as { type?: unknown; op?: StoreOp } | null;
   if (!m || m.type !== CHANNEL || typeof m.op !== 'object' || m.op === null) return false;
+  if (!validOp(m.op)) { respond({ ok: false, error: 'Invalid store operation' }); return true; }
   void enqueue(m.op).then(
     outcome => respond({ ok: true, value: outcome.value }),
     (err: unknown) => respond({ ok: false, error: err instanceof Error ? err.message : String(err) }),

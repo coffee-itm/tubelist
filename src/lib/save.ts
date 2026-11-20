@@ -42,6 +42,8 @@ export async function saveLink(
   if (videos.length === 0) throw new Error('None of the videos are available');
   const sourceId = link.listId;
   const existing = sourceId ? await findBySourceId(sourceId) : undefined;
+  // ponytail: abort a partial refresh; retry the link when YouTube metadata is available again.
+  if (existing && failed) throw new Error(`Playlist refresh incomplete (${failed} unavailable); existing videos kept`);
   const name =
     (target.kind === 'new' ? target.name : null) ??
     existing?.name ??

@@ -20,6 +20,13 @@ const isPlaylist = (value: unknown): boolean => {
     && Array.isArray(p.videos) && p.videos.every(isVideo);
 };
 
+const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isPrefs = (v: unknown, fields: string[]): boolean => record(v) && fields.every(k => !(k in v) || typeof v[k] === 'boolean');
+const isProgress = (v: unknown): boolean => record(v) && Object.values(v).every(p => record(p)
+  && typeof p.t === 'number' && Number.isFinite(p.t) && p.t >= 0
+  && typeof p.d === 'number' && Number.isFinite(p.d) && p.d > 0 && p.t <= p.d
+  && typeof p.done === 'boolean');
+
 /**
  * The whole stored state, as the text of a backup file. `format` is what makes a file ours to read back.
  * An empty profile has no `playlists` key at all, so it is seeded here: without it the export of a
@@ -43,7 +50,11 @@ export function parseBackup(text: string): Record<string, unknown> {
     throw new Error('That file is not JSON');
   }
   const file = raw as Record<string, unknown> | null;
-  if (!file || typeof file !== 'object' || file.format !== 'tubelist' || !Array.isArray(file.playlists) || !file.playlists.every(isPlaylist)) {
+  if (!record(file) || file.format !== 'tubelist' || !Array.isArray(file.playlists) || !file.playlists.every(isPlaylist)
+    || ('skipPrefs' in file && !(record(file.skipPrefs) && record(file.skipPrefs.categories)
+      && Object.values(file.skipPrefs.categories).every(v => typeof v === 'boolean') && isPrefs(file.skipPrefs, ['countdown'])))
+    || ('playerPrefs' in file && !isPrefs(file.playerPrefs, ['description', 'sync']))
+    || (PROGRESS_KEY in file && !isProgress(file[PROGRESS_KEY]))) {
     throw new Error('Not a TubeList backup file');
   }
   return Object.fromEntries(KEYS.filter(k => k in file).map(k => [k, file[k]]));

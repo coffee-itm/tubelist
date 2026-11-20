@@ -1,9 +1,11 @@
 import { classifyUrl, YT_LINK_PATTERNS } from './lib/url';
 import { cleanName, ensureSkipPrefs, getPlaylists, installStoreServer, SAVED_SOURCE_ID } from './lib/store';
 import { saveLink, type SaveTarget } from './lib/save';
+import { installProgressServer } from './lib/progress';
 
 // Playlist writes are applied here and nowhere else, so two contexts cannot overwrite each other's save.
 installStoreServer();
+installProgressServer();
 
 // The extension's own host: `chrome-extension://<id>` in Chrome, `moz-extension://<uuid>` in Firefox,
 // where `runtime.id` (the gecko id) is not the host. `runtime.id` in initiatorDomains silently matches
@@ -67,7 +69,7 @@ chrome.runtime.onMessage.addListener((msg: SegmentsRequest | CssRequest, sender,
     // Injected by the browser, not as a <style> node: YouTube rebuilds its document while booting, so
     // a node the content script adds at document_start is dropped (and the parser stalls if it goes on
     // <html> before <head> exists). An extension stylesheet is not part of that DOM at all.
-    if (typeof msg.css !== 'string' || !sender.url?.startsWith('https://www.youtube.com/') || sender.tab?.id === undefined || sender.frameId === undefined) return;
+    if (typeof msg.css !== 'string' || !sender.url?.startsWith('https://www.youtube.com/') || sender.tab?.id === undefined || !sender.frameId) return;
     chrome.scripting
       .insertCSS({ target: { tabId: sender.tab.id, frameIds: [sender.frameId] }, css: msg.css })
       .catch((err: unknown) => console.warn('TubeList frame CSS failed', err));

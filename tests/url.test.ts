@@ -19,6 +19,11 @@ it.each([
   ['https://evil.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
   ['https://notyoutube.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
   ['not a url', { type: 'invalid' }],
+  ['javascript://youtube.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
+  ['https://user@youtube.com/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
+  ['https://youtube.com:444/watch?v=dQw4w9WgXcQ', { type: 'invalid' }],
+  ['https://youtube.com/other?v=dQw4w9WgXcQ', { type: 'invalid' }],
+  ['https://youtu.be/invalid?v=dQw4w9WgXcQ', { type: 'invalid' }],
 ])('classifyUrl(%s)', (input, expected) => {
   expect(classifyUrl(input)).toEqual(expected);
 });

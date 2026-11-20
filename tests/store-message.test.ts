@@ -64,3 +64,17 @@ it('ignores messages that are not store ops', () => {
   expect(handleStoreMessage({ type: 'sb:segments', prefix: 'ab12', categories: ['sponsor'] }, null, () => {})).toBe(false);
   expect(handleStoreMessage(null, null, () => {})).toBe(false);
 });
+
+it('rejects a malformed store message without modifying playlists', async () => {
+  const answer = Promise.withResolvers<unknown>();
+  expect(handleStoreMessage({ type: 'tubelist:store', op: { op: 'save', input: { sourceId: 'PL1' } } }, null, answer.resolve)).toBe(true);
+  expect(await answer.promise).toMatchObject({ ok: false });
+  expect(await getPlaylists()).toEqual([]);
+});
+
+it('does not mutate storage on an unknown operation', async () => {
+  const answer = Promise.withResolvers<unknown>();
+  expect(handleStoreMessage({ type: 'tubelist:store', op: { op: 'unknown' } }, null, answer.resolve)).toBe(true);
+  expect(await answer.promise).toMatchObject({ ok: false });
+  expect(await getPlaylists()).toEqual([]);
+});

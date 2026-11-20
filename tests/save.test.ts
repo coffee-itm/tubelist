@@ -72,6 +72,26 @@ it('names the videos it could not read instead of dropping them silently', async
   vi.unstubAllGlobals();
 });
 
+it('does not overwrite an existing playlist when a refresh cannot read every video', async () => {
+  await savePlaylist({ name: 'My List', kind: 'youtube', sourceId: 'PL1', videos: [video(A), video(B)] });
+  vi.stubGlobal('fetch', vi.fn(async (url: string | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as { videoId?: string };
+    if (String(url).includes('/player')) return body.videoId === B
+      ? { ok: false, status: 503 }
+      : { ok: true, json: async () => player(A) };
+    return { ok: true, json: async () => ({
+      metadata: { playlistMetadataRenderer: { title: 'My List' } },
+      contents: [A, B].map(id => ({ lockupViewModel: { contentType: 'LOCKUP_CONTENT_TYPE_VIDEO', contentId: id } })),
+    }) };
+  }) as unknown as typeof fetch);
+  try {
+    await expect(saveLink({ type: 'playlist', listId: 'PL1', videoId: null }, { kind: 'saved' })).rejects.toThrow('incomplete');
+    expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual([A, B]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it('rejects a non-YouTube link', async () => {
   await expect(saveLink({ type: 'invalid' }, { kind: 'saved' })).rejects.toThrow('Not a YouTube video/playlist link');
 });

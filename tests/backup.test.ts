@@ -54,3 +54,17 @@ it('leaves keys the file does not carry alone', async () => {
   expect(await getPlaylists()).toHaveLength(0);
   expect((await getSkipPrefs()).categories.intro).toBe(false);
 });
+
+it('rejects invalid settings and progress before writing anything', async () => {
+  await addToSaved(vid('aaaaaaaaaaa'));
+  const before = await backup();
+  for (const bad of [
+    { skipPrefs: { categories: null } },
+    { playerPrefs: { sync: 'yes' } },
+    { progress: { aaaaaaaaaaa: { t: -1, d: 60, done: false } } },
+    { progress: [] },
+  ]) {
+    expect(() => parseBackup(JSON.stringify({ format: 'tubelist', playlists: [], ...bad }))).toThrow('Not a TubeList backup');
+    expect(await backup()).toBe(before);
+  }
+});

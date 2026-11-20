@@ -65,14 +65,23 @@ function setup(): void {
   // YouTube lays its control bar out during the fullscreen transition; nudge it once the state settles.
   document.addEventListener('fullscreenchange', () => window.dispatchEvent(new Event('resize')));
 
-  // The player page is a cross-origin embedder: the <video> is only reachable from inside this frame.
-  // ponytail: pause is the only command so far; play/seek go here when something needs them.
+  // The player page cannot inspect this cross-origin frame; answer its visibility-resume query locally.
   window.addEventListener('message', e => {
     if (e.origin !== parentOrigin) return;
     const m = e.data as { tubelist?: number; cmd?: string } | null;
-    if (m?.tubelist !== 3 || m.cmd !== 'pause') return;
+    if (m?.tubelist !== 3) return;
     const v = document.querySelector('video');
-    if (v instanceof HTMLVideoElement) v.pause();
+    if (!(v instanceof HTMLVideoElement)) return;
+    if (m.cmd === 'pause') v.pause();
+    else if (m.cmd === 'report') {
+      const mp = document.getElementById('movie_player');
+      if (!mp?.classList.contains('ad-showing')) {
+        window.parent.postMessage(
+          { tubelist: 1, id: videoId(), t: v.currentTime, d: v.duration, state: v.ended ? 'ended' : v.paused ? 'pause' : 'timeupdate' },
+          parentOrigin,
+        );
+      }
+    }
   });
   let adTailUntil = 0; // the ad's own ended/pause must never be reported as the video's
   const report = (e: Event): void => {
@@ -87,6 +96,14 @@ function setup(): void {
   };
   // Media events don't bubble and <video> appears later, so capture on document.
   for (const type of ['timeupdate', 'pause', 'ended']) document.addEventListener(type, report, true);
+  // Hidden tabs can delay/drop the final media event; an ended video stays ended until the player
+  // replaces the frame. One heartbeat is enough to wake the loop without relying on tab visibility.
+  setInterval(() => {
+    const v = document.querySelector('video');
+    if (!(v instanceof HTMLVideoElement) || !v.ended || Date.now() < adTailUntil) return;
+    if (document.getElementById('movie_player')?.classList.contains('ad-showing')) return;
+    report({ target: v, type: 'ended' } as unknown as Event);
+  }, 1000);
 
   // --- SponsorBlock -------------------------------------------------------------------------
   // Segments come from the community database by 4-char hash prefix (the server has no videoID lookup).

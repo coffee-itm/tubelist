@@ -63,6 +63,17 @@ it('reports progress from an embed page with its path ID', () => {
   window.history.replaceState(null, '', '/embed/dQw4w9WgXcQ?autoplay=1');
   expect(reportAt(30)).toMatchObject({ id: 'dQw4w9WgXcQ', t: 30 });
 });
+it('reports completion in a hidden tab even when media events are missed', async () => {
+  window.history.replaceState(null, '', '/embed/dQw4w9WgXcQ?autoplay=1');
+  const v = videoAt(100);
+  Object.defineProperty(v, 'ended', { value: true });
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  posted.length = 0;
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(posted).toContainEqual(expect.objectContaining({ id: 'dQw4w9WgXcQ', state: 'ended' }));
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  v.remove();
+});
 it('pauses the media when the player page asks it to, and ignores other senders', () => {
   const v = document.createElement('video');
   const pause = vi.spyOn(v, 'pause').mockImplementation(() => {}); // jsdom logs a not-implemented notice

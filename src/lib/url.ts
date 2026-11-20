@@ -27,13 +27,14 @@ export function classifyUrl(raw: string): LinkInfo {
   }
 
   const host = u.hostname;
+  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.port) return { type: 'invalid' };
   if (host !== 'youtu.be' && host !== 'youtube.com' && !host.endsWith('.youtube.com')) return { type: 'invalid' };
 
   const segs = u.pathname.split('/').filter(Boolean);
   let v: string | null = null;
   if (host === 'youtu.be') v = segs[0] ?? null;
   else if (SEGMENT_PATHS.includes(segs[0])) v = segs[1] ?? null;
-  else v = u.searchParams.get('v');
+  else if (u.pathname === '/watch') v = u.searchParams.get('v');
   if (v === null || !VIDEO_ID_RE.test(v)) v = null;
 
   if (u.pathname === '/watch_videos') {

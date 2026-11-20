@@ -155,6 +155,46 @@ it('cycles loop modes and advances the playlist when a video ends', async () => 
   await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + B));
 });
 
+it('requests fresh frame state when the player tab becomes visible', async () => {
+  rowOf('Video A').click();
+  await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + A));
+  toolbarButtons('Loop ').click(); // loop all
+  const post = vi.spyOn(iframe().contentWindow!, 'postMessage');
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(post).toHaveBeenCalledWith({ tubelist: 3, cmd: 'report' }, 'https://www.youtube.com');
+});
+it('advances loop all while the player tab stays hidden when the frame reports completion', async () => {
+  rowOf('Video A').click();
+  await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + A));
+  const loopBtn = toolbarButtons('Loop ');
+  if (loopBtn.textContent !== 'Loop off') { loopBtn.click(); if (loopBtn.textContent !== 'Loop off') loopBtn.click(); }
+  loopBtn.click();
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  window.dispatchEvent(new MessageEvent('message', {
+    origin: 'https://www.youtube.com', source: iframe().contentWindow,
+    data: { tubelist: 1, id: A, t: 60, d: 60, state: 'ended' },
+  }));
+  await vi.waitFor(() => expect(iframe().src).toContain('/embed/' + B));
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+});
+it('replays loop one while the player tab stays hidden', async () => {
+  rowOf('Video A').click();
+  const loopBtn = toolbarButtons('Loop ');
+  if (loopBtn.textContent === 'Loop off') loopBtn.click();
+  if (loopBtn.textContent === 'Loop all') loopBtn.click();
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+  const navigations: string[] = [];
+  const original = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src')!;
+  Object.defineProperty(iframe(), 'src', { configurable: true, get() { return original.get!.call(this); }, set(url: string) { navigations.push(url); original.set!.call(this, url); } });
+  window.dispatchEvent(new MessageEvent('message', {
+    origin: 'https://www.youtube.com', source: iframe().contentWindow,
+    data: { tubelist: 1, id: A, t: 60, d: 60, state: 'ended' },
+  }));
+  expect(navigations).toEqual(['about:blank', 'https://www.youtube.com/embed/' + A + '?autoplay=1']);
+  expect(iframe().src).toContain('/embed/' + A);
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+});
 it('ignores what the frame reports for another video', async () => {
   // YouTube navigates the framed page itself; a report from that other video must not move the playlist.
   const src = iframe().src;
@@ -166,6 +206,17 @@ it('ignores what the frame reports for another video', async () => {
   }));
   expect(iframe().src).toBe(src);
   expect(document.getElementById('title')?.textContent).toBe(title);
+});
+
+it('saves progress when switching rows before a five-second tick', async () => {
+  const { getProgress } = await import('../src/lib/progress');
+  rowOf('Video A').click();
+  window.dispatchEvent(new MessageEvent('message', {
+    origin: 'https://www.youtube.com', source: iframe().contentWindow,
+    data: { tubelist: 1, id: A, t: 18, d: 60, state: 'timeupdate' },
+  }));
+  rowOf('Video B').click();
+  await vi.waitFor(async () => expect((await getProgress())[A]?.t).toBe(18));
 });
 
 it('counts a sleep timer down and pauses the frame when it runs out', () => {

@@ -2,6 +2,7 @@ import { h } from './dom';
 
 export interface Progress { t: number; d: number; done: boolean } // seconds watched, duration, watched ✓
 export const PROGRESS_KEY = 'progress';
+const CHANNEL = 'tubelist:progress';
 
 export async function getProgress(): Promise<Record<string, Progress>> {
   const res = await chrome.storage.local.get(PROGRESS_KEY);
@@ -10,6 +11,12 @@ export async function getProgress(): Promise<Record<string, Progress>> {
 
 /** Serialized: every save rewrites the whole map, so two overlapping saves would lose one of them. */
 let queue: Promise<unknown> = Promise.resolve();
+
+export function withProgressLock<T>(work: () => Promise<T>): Promise<T> {
+  const job = queue.then(work);
+  queue = job.then(() => undefined, () => undefined);
+  return job;
+}
 
 async function commit(id: string, t: number, d: number, ended: boolean): Promise<Progress> {
   const all = await getProgress();
@@ -21,13 +28,36 @@ async function commit(id: string, t: number, d: number, ended: boolean): Promise
 }
 
 export function setProgress(id: string, t: number, d: number, ended: boolean): Promise<Progress | null> {
-  if (!(d > 0) || !(t >= 0)) return Promise.resolve(null);
-  const job = queue.then(() => commit(id, t, d, ended));
-  queue = job.then(
-    () => undefined,
-    () => undefined,
-  );
-  return job;
+  if (!Number.isFinite(d) || !Number.isFinite(t) || !(d > 0) || !(t >= 0)) return Promise.resolve(null);
+  if (typeof chrome.runtime?.sendMessage === 'function' && !isServer) {
+    return new Promise((resolve, reject) => chrome.runtime.sendMessage({ type: CHANNEL, id, t, d, ended }, (res: { ok: boolean; value?: Progress; error?: string }) => {
+      const err = chrome.runtime.lastError;
+      if (err) reject(new Error(err.message ?? 'TubeList background is unavailable'));
+      else if (!res?.ok) reject(new Error(res?.error ?? 'TubeList background did not answer'));
+      else resolve(res.value ?? null);
+    }));
+  }
+  return withProgressLock(() => commit(id, t, d, ended));
+}
+
+let isServer = false;
+export function installProgressServer(): void {
+  isServer = true;
+  chrome.runtime.onMessage.addListener((message: unknown, _sender, respond) => {
+    const m = message as { type?: string; id?: string; t?: number; d?: number; ended?: boolean } | null;
+    if (m?.type !== CHANNEL) return false;
+    if (typeof m.id !== 'string' || typeof m.t !== 'number' || typeof m.d !== 'number' || typeof m.ended !== 'boolean'
+      || !Number.isFinite(m.t) || !Number.isFinite(m.d) || m.t < 0 || m.d <= 0) {
+      respond({ ok: false, error: 'Invalid progress update' });
+      return false;
+    }
+    const { id, t, d, ended } = m;
+    void withProgressLock(() => commit(id, t, d, ended)).then(
+      value => respond({ ok: true, value }),
+      (err: unknown) => respond({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+    );
+    return true;
+  });
 }
 
 export const percent = (p: Progress | undefined): number => {

@@ -242,6 +242,11 @@ it('relays the frame stylesheet to the exact frame that asked for it', async () 
   expect(inserted).toEqual([]);
 });
 
+it('ignores stylesheet requests from a top-level YouTube tab', async () => {
+  await send({ type: 'tl:css', css: 'body{display:none}' }, { url: 'https://www.youtube.com/watch?v=x', tab: { id: 3 }, frameId: 0 });
+  expect(inserted).toEqual([]);
+});
+
 it('relays the SponsorBlock lookup with the categories and action types the API expects', async () => {
   const answer = await send({ type: 'sb:segments', prefix: 'ab12', categories: ['sponsor', 'intro'] });
   await flush();
@@ -252,6 +257,21 @@ it('relays the SponsorBlock lookup with the categories and action types the API 
       `&actionTypes=${encodeURIComponent(JSON.stringify(['skip']))}`,
   );
   expect(await answer).toEqual([]);
+});
+
+it('serializes player progress in the worker alongside playlist pruning', async () => {
+  const { setProgress, getProgress } = await import('../src/lib/progress');
+  const { removeVideo } = await import('../src/lib/store');
+  const video = (id: string) => ({ id, title: id, channel: '', thumbnail: '', durationSec: 60, publishedAt: null, addedAt: 1 });
+  const p = await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [video(A), video('bbbbbbbbbbb')] });
+  const [reply] = await Promise.all([
+    send({ type: 'tubelist:progress', id: 'bbbbbbbbbbb', t: 10, d: 60, ended: false }),
+    removeVideo(p.id, A),
+  ]);
+  expect(reply).toMatchObject({ ok: true, value: { t: 10 } });
+  expect(await getProgress()).toEqual({ bbbbbbbbbbb: { t: 10, d: 60, done: false } });
+  // This test runs in the worker context; a real player sends this message instead of writing storage directly.
+  expect(await setProgress('bbbbbbbbbbb', 12, 60, false)).toMatchObject({ t: 12 });
 });
 
 it('answers a SponsorBlock lookup with an empty list when the API fails or answers with junk', async () => {
