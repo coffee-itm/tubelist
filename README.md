@@ -33,17 +33,17 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 
 | Metric | Value |
 | --- | --- |
-| Version | `0.5.3` (Manifest V3) |
+| Version | `0.6.0` (Manifest V3) |
 | Targets | Chromium (`dist/`), Firefox 140+ (`dist-firefox/`) |
-| Source files | 18 TypeScript (+1 stylesheet) |
-| Source lines | ~2,460 |
-| Tests | 166 across 17 vitest suites |
+| Source files | 19 TypeScript (+1 stylesheet) |
+| Source lines | ~2,930 |
+| Tests | 177 across 18 vitest suites |
 | Runtime dependencies | **0** |
 | License | MIT |
 | Dev dependencies | 7 (`vite`, `typescript`, `vitest`, `jsdom`, `tailwindcss` ×2, `@types/chrome`) |
-| Bundle size | ~90 KB unpacked (`dist/`) |
-| Tracked files | 63 |
-| Commits | 35 |
+| Bundle size | ~101 KB unpacked (`dist/`) |
+| Tracked files | 69 |
+| Commits | 41 |
 
 ## ✨ Features
 
@@ -57,7 +57,9 @@ A lightweight browser extension (Manifest V3, Chromium **and** Firefox) that tur
 - 📝 **Description toggle** — the video's description sits in a collapsible panel under the player; *Settings* → Player hides it. Rows saved before v0.4 fetch their description once, on first view.
 - ▶️ **Player source toggle** — *Settings* → Player → *Sync with logged YouTube account* is off by default: playback uses YouTube's embed player. Turn it on for the real `youtube.com/watch` page (watch history and account resume). Playlists, local progress bars and SponsorBlock skipping work in both.
 - ↔️ **Resizable playlist sidebar** — drag the divider between the player and the playlist on desktop (or focus it and use ←/→); the width is remembered.
-- ↕️ **Reorder videos** — drag a row, or focus it and press Alt+↑/↓, in the popup or the player; the new order is saved with the playlist.
+- 🔀 **Sort playlists and videos** — a playlist can show its videos newest/oldest first, longest first, or A→Z by title, and the popup's playlist list sorts newest/oldest or by name. Sorting is a view: the stored order is untouched, and editing switches back to *Manual order*.
+- ✏️ **Edit a playlist in the popup** — name, type and video order are edited in a working copy and written when you press **Save**; leaving with unsaved edits asks whether to save or discard.
+- ↕️ **Reorder videos** — drag a row, or focus it and press Alt+↑/↓, in the popup or the player; the new order is saved with the playlist. Dragging is offered in *Manual order*, the one view where the stored order is what you see.
 - 📤 **Share a playlist** — the popup copies a YouTube `watch_videos` queue link for the playlist (first 50 videos); anyone can open it as a temporary YouTube playlist, and another TubeList user can right-click it → *Add to TubeList*.
 - ⏭️ **SponsorBlock skipping** — crowd-sourced sponsor, self-promotion, engagement, intro, outro, preview and non-music segments are skipped inside the frame. *Off-topic filler* is offered but **off by default**, and highlights are not offered at all: the database stores them as a single moment, with no span to cut. Every category has its own toggle (plus a 3-second sponsor countdown) in *Settings* → SponsorBlock.
 - 💾 **Local-first playlists** — playlists live in `chrome.storage.local`. No account, no server, nothing leaves your machine.
@@ -148,7 +150,7 @@ The `.zip` uploaded to addons.mozilla.org is `dist-firefox/` and nothing else, b
 
 ```sh
 pnpm install --frozen-lockfile   # pnpm 11.13.1, Node 20 or newer (see package.json)
-pnpm test                        # 145 tests, 17 suites
+pnpm test                        # 177 tests, 18 suites
 pnpm build:firefox               # typecheck + vite build --mode firefox
 pnpm dlx web-ext lint --source-dir dist-firefox   # 0 errors, 0 warnings
 pnpm dlx web-ext build --source-dir dist-firefox --artifacts-dir . --overwrite-dest

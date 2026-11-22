@@ -5,6 +5,30 @@ All notable changes to TubeList are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-11-22
+
+### Added
+
+- **Sort playlists and the videos in them.** A playlist's videos can be shown newest first, oldest first, longest
+  first, or A→Z by title; the popup's playlist list sorts newest first, oldest first, or by name. Sorting is a
+  view — the stored order is never rewritten — so drag-to-reorder is offered only in *Manual order*, the one view
+  where the stored order is what you see.
+- **Edit a playlist in the popup.** Name, type and video order are edited in a working copy and written to storage
+  only when **Save** is pressed; leaving the playlist with unsaved edits asks whether to save or discard them.
+- **Change a playlist's type** (custom, YouTube list, queue) from the popup. A playlist set back to *custom* drops
+  its YouTube link, so a later save cannot merge it into the source it came from.
+- **Recently edited playlists float to the top.** Each edit records when a playlist was last active, and the
+  default list order follows that instead of creation time.
+
+### Fixed
+
+- **Firefox showed "Video player configuration error — Error 153" for every embed.** The `declarativeNetRequest`
+  rule that supplies the `Referer` YouTube requires was matched on the extension as the request's initiator, and
+  Firefox exposes no usable initiator for a frame navigation an extension page starts — so the rule matched
+  nothing there and the embed loaded with no referrer. It now matches the `tubelist=1` marker TubeList appends to
+  its own embed URLs, which does not depend on the initiator. Chrome is unaffected, and both browsers now behave
+  identically with account sync on or off.
+
 ## [0.5.3] — 2026-11-20
 
 ### Fixed
