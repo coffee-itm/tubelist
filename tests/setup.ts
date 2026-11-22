@@ -79,6 +79,7 @@ globalThis.chrome = {
   },
   runtime: {
     getURL: (p: string) => 'chrome-extension://test/' + p,
+    getManifest: () => ({ version: '0.0.0' }),
     openOptionsPage: async () => {},
   },
   tabs: { create: async () => ({}) },

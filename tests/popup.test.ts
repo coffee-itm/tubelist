@@ -35,8 +35,8 @@ it('lists a playlist once it exists', async () => {
 it('shows the Saved playlist under the name it was given', async () => {
   await savePlaylist({ name: 'Inbox', kind: 'custom', sourceId: SAVED_SOURCE_ID, videos: [] });
   await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [vid(B)] });
-  await vi.waitFor(() => expect(app().querySelectorAll('select option').length).toBe(2));
-  expect([...app().querySelectorAll('select option')].map(o => o.textContent)).toEqual(['Inbox', 'A']);
+  await vi.waitFor(() => expect(app().querySelectorAll('select[aria-label="Playlist to save into"] option').length).toBe(2));
+  expect([...app().querySelectorAll('select[aria-label="Playlist to save into"] option')].map(o => o.textContent)).toEqual(['Inbox', 'A']);
 });
 
 it('repaints progress in place instead of rebuilding the open playlist', async () => {
@@ -89,4 +89,36 @@ it('deletes a playlist only once the confirm dialog is accepted', async () => {
   dialogButton('Delete').click();
   await vi.waitFor(async () => expect((await getPlaylists()).some(p => p.name === 'Doomed')).toBe(false));
   expect(app().textContent).not.toContain('Doomed');
+});
+
+const openPlaylist = async (name: string): Promise<void> => {
+  ([...app().querySelectorAll('li > button')].find(b => b.textContent?.includes(name)) as HTMLElement).click();
+  await vi.waitFor(() => expect(app().querySelector('[aria-label="Playlist name"]')).not.toBeNull());
+};
+
+it('holds edits until Save, and offers save or discard on the way back', async () => {
+  await savePlaylist({ name: 'Edit me', kind: 'custom', sourceId: null, videos: [vid(A)] });
+  await vi.waitFor(() => expect([...rows()].some(r => r.textContent?.includes('Edit me'))).toBe(true));
+  await openPlaylist('Edit me');
+
+  const rename = async (to: string): Promise<void> => {
+    const input = app().querySelector('[aria-label="Playlist name"]') as HTMLInputElement;
+    input.value = to;
+    input.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(appButton('Save')).toBeTruthy()); // the Save button appears only once the draft is dirty
+  };
+
+  await rename('Discarded');
+  expect((await getPlaylists())[0].name).toBe('Edit me'); // nothing is applied before Save
+
+  (app().querySelector('[aria-label="Back"]') as HTMLElement).click();
+  await vi.waitFor(() => expect(document.querySelector('dialog')).not.toBeNull());
+  dialogButton('Discard').click();
+  await vi.waitFor(() => expect(app().querySelector('[aria-label="Playlist name"]')).toBeNull()); // back on the list
+  expect((await getPlaylists())[0].name).toBe('Edit me');
+
+  await openPlaylist('Edit me');
+  await rename('Kept');
+  appButton('Save').click();
+  await vi.waitFor(async () => expect((await getPlaylists())[0].name).toBe('Kept'));
 });

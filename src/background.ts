@@ -31,10 +31,12 @@ const HEADER_RULES: chrome.declarativeNetRequest.Rule[] = [
   },
 ];
 
-// The embed player refuses a chrome-extension:// embedder: no Referer means the page stops at
-// "Video player configuration error — Error 153". An extension page cannot send one itself, so the
-// rule supplies the project's site as the referrer. Same-origin www.youtube.com also works, but
-// claiming to be YouTube is a lie the error page does not need.
+// The embed player refuses an extension embedder: YouTube answers a request with no Referer with
+// "Video player configuration error — Error 153" (server-side, so no query parameter can stand in for
+// it). An extension page sends no referrer of its own, so this rule supplies the project's site.
+// Match on the marker `embedUrl` adds, not on `initiatorDomains`: Firefox does not expose a usable
+// initiator for a frame navigation started by an extension page, so an initiator-scoped rule matches
+// nothing there. The marker is TubeList's own, so embeds on other sites are untouched.
 const EMBED_REFERER = 'https://tubelist.app/';
 
 const EMBED_RULES: chrome.declarativeNetRequest.Rule[] = [
@@ -42,7 +44,7 @@ const EMBED_RULES: chrome.declarativeNetRequest.Rule[] = [
     id: 4,
     priority: 2,
     action: { type: 'modifyHeaders', requestHeaders: [{ header: 'referer', operation: 'set', value: EMBED_REFERER }] },
-    condition: { urlFilter: '|https://www.youtube.com/embed/', initiatorDomains: [SELF_DOMAIN], resourceTypes: ['sub_frame'] },
+    condition: { urlFilter: 'tubelist=1', requestDomains: ['www.youtube.com'], resourceTypes: ['sub_frame'] },
   },
 ];
 

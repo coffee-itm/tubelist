@@ -1,7 +1,8 @@
 import '../styles.css';
-import { h, icon, LOOP_ICON, LOOP_ONE_ICON, MOON_ICON, TRASH_ICON, YOUTUBE_ICON } from '../lib/dom';
-import { getPlaylists, getPlayerPrefs, moveVideo, removeVideo, setPlayerPrefs } from '../lib/store';
+import { h, icon, LOOP_ICON, LOOP_ONE_ICON, MOON_ICON, SORT_ICON, TRASH_ICON, YOUTUBE_ICON } from '../lib/dom';
+import { getPlaylists, getPlayerPrefs, moveVideo, removeVideo, setPlayerPrefs, setSort } from '../lib/store';
 import { sortable } from '../lib/sortable';
+import { SORT_OPTIONS, sortVideos } from '../lib/sort';
 import { askConfirm } from '../lib/dialog';
 import { formatDuration, formatPublished } from '../lib/format';
 import { embedUrl, watchUrl, VIDEO_ID_RE } from '../lib/url';
@@ -160,6 +161,9 @@ async function start(firstId: string): Promise<void> {
   const videoById = new Map<string, Video>();
   for (const p of all) for (const v of p.videos) if (!videoById.has(v.id)) videoById.set(v.id, v);
 
+  /** The playlist's videos in the order the sidebar shows them. */
+  const orderedVideos = (): Video[] => (playlist ? sortVideos(playlist.videos, playlist.sort) : []);
+
   const descriptions = new Map<string, string>();
   const descEl = h('details', 'mt-3 rounded-xl bg-zinc-900 p-3 text-sm');
   const descBody = h('div', 'mt-2 max-h-[40vh] overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400');
@@ -213,7 +217,7 @@ async function start(firstId: string): Promise<void> {
 
   const setHeading = (): void => {
     if (!heading || !playlist) return;
-    const index = playlist.videos.findIndex(x => x.id === currentId);
+    const index = orderedVideos().findIndex(x => x.id === currentId);
     heading.textContent = index < 0 ? 'Up next' : `Up next · ${index + 1}/${playlist.videos.length}`;
   };
 
@@ -224,6 +228,23 @@ async function start(firstId: string): Promise<void> {
     thumb.append(...progressOverlay(p));
   };
 
+  /** Marks the row playing now and scrolls it into view, without reloading the video. */
+  const paintActive = (): void => {
+    const index = orderedVideos().findIndex(x => x.id === currentId);
+    rows.forEach((row, i) => {
+      const active = i === index;
+      row.classList.toggle('bg-zinc-800', active);
+      row.classList.toggle('ring-1', active);
+      row.classList.toggle('ring-red-500/60', active);
+      if (active) {
+        row.setAttribute('aria-current', 'true');
+        row.scrollIntoView({ block: 'nearest' });
+      } else {
+        row.removeAttribute('aria-current');
+      }
+    });
+  };
+
   if (playlist) {
     plNameEl.textContent = playlist.name;
     heading = h('h2', 'px-2 py-2 text-sm font-semibold');
@@ -231,61 +252,104 @@ async function start(firstId: string): Promise<void> {
     const aside = h('aside', 'lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto rounded-2xl bg-zinc-900 p-2', heading, list);
     main.append(resizer(main, aside), aside);
 
-    for (const v of playlist.videos) {
-      const row = h('div', 'relative rounded-xl');
-      const play = h('button', `w-full text-left flex gap-3 rounded-xl p-2 pr-9 hover:bg-zinc-800 ${FOCUS}`);
-      const thumb = h('div', 'relative shrink-0 overflow-hidden rounded-lg');
-      const img = h('img', 'w-[120px] h-[68px] object-cover');
-      img.src = v.thumbnail;
-      img.loading = 'lazy';
-      img.alt = '';
-      img.draggable = false;
-      thumb.append(img);
-      const duration = formatDuration(v.durationSec);
-      if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
-      thumb.append(...progressOverlay(progress[v.id]));
-      thumbs.set(v.id, thumb);
+    const buildList = (): void => {
+      list.replaceChildren();
+      rows.length = 0;
+      for (const v of orderedVideos()) {
+        const row = h('div', 'relative rounded-xl');
+        const play = h('button', `w-full text-left flex gap-3 rounded-xl p-2 pr-9 hover:bg-zinc-800 ${FOCUS}`);
+        const thumb = h('div', 'relative shrink-0 overflow-hidden rounded-lg');
+        const img = h('img', 'w-[120px] h-[68px] object-cover');
+        img.src = v.thumbnail;
+        img.loading = 'lazy';
+        img.alt = '';
+        img.draggable = false;
+        thumb.append(img);
+        const duration = formatDuration(v.durationSec);
+        if (duration) thumb.append(h('span', 'absolute bottom-1.5 right-1 rounded bg-black/80 px-1 text-[10px] font-medium text-white', duration));
+        thumb.append(...progressOverlay(progress[v.id]));
+        thumbs.set(v.id, thumb);
 
-      const published = formatPublished(v.publishedAt);
-      const text = h('div', 'min-w-0 flex-1',
-        h('div', 'line-clamp-2 text-sm font-medium leading-snug', v.title),
-        h('div', 'mt-0.5 truncate text-xs text-zinc-500', v.channel),
-        h('div', 'text-xs text-zinc-500', published),
-      );
-      if (v.publishedAt) text.lastElementChild!.setAttribute('title', new Date(v.publishedAt).toLocaleDateString());
+        const published = formatPublished(v.publishedAt);
+        const text = h('div', 'min-w-0 flex-1',
+          h('div', 'line-clamp-2 text-sm font-medium leading-snug', v.title),
+          h('div', 'mt-0.5 truncate text-xs text-zinc-500', v.channel),
+          h('div', 'text-xs text-zinc-500', published),
+        );
+        if (v.publishedAt) text.lastElementChild!.setAttribute('title', new Date(v.publishedAt).toLocaleDateString());
 
-      play.append(thumb, text);
-      play.addEventListener('click', () => show(v.id));
+        play.append(thumb, text);
+        play.addEventListener('click', () => show(v.id));
 
-      // Lazy: no undo, the video is gone from storage. Add when a misclick ever loses real data.
-      const rm = h('button', `absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full text-zinc-500 transition hover:bg-red-600 hover:text-white ${FOCUS}`);
-      rm.setAttribute('aria-label', 'Remove from playlist');
-      rm.title = 'Remove from playlist';
-      rm.append(icon(TRASH_ICON));
-      rm.addEventListener('click', async () => {
-        if (!await askConfirm({ title: 'Remove video?', body: `"${v.title}" leaves "${playlist.name}".`, confirm: 'Remove' })) return;
-        await removeVideo(playlist.id, v.id);
-        // A second click while the first dialog is still up re-splices -1 and eats a neighbour.
-        const i = playlist.videos.findIndex(x => x.id === v.id);
-        if (i > -1) {
-          playlist.videos.splice(i, 1);
-          rows.splice(i, 1);
-        }
-        row.remove();
+        // Lazy: no undo, the video is gone from storage. Add when a misclick ever loses real data.
+        const rm = h('button', `absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full text-zinc-500 transition hover:bg-red-600 hover:text-white ${FOCUS}`);
+        rm.setAttribute('aria-label', 'Remove from playlist');
+        rm.title = 'Remove from playlist';
+        rm.append(icon(TRASH_ICON));
+        rm.addEventListener('click', async () => {
+          if (!await askConfirm({ title: 'Remove video?', body: `"${v.title}" leaves "${playlist.name}".`, confirm: 'Remove' })) return;
+          await removeVideo(playlist.id, v.id);
+          // A second click while the first dialog is still up re-splices -1 and eats a neighbour.
+          const si = playlist.videos.findIndex(x => x.id === v.id);
+          if (si > -1) playlist.videos.splice(si, 1);
+          const ri = rows.indexOf(row);
+          if (ri > -1) rows.splice(ri, 1);
+          row.remove();
+          setHeading();
+        });
+
+        row.append(play, rm);
+        rows.push(row);
+        list.append(row);
+      }
+      // Drag only makes sense in manual order: the sorted views are read-only.
+      if (!playlist.sort || playlist.sort === 'manual') {
+        sortable(list, rows, (from, to) => {
+          playlist.videos.splice(to, 0, ...playlist.videos.splice(from, 1));
+          void moveVideo(playlist.id, from, to);
+          setHeading();
+        });
+      }
+    };
+    buildList();
+
+    const sortBtn = h('button', BTN);
+    const sortMenu = h('div', 'absolute left-0 top-full z-20 mt-1 hidden rounded-lg border border-zinc-800 bg-zinc-900 p-1 shadow-xl');
+    sortMenu.setAttribute('aria-label', 'Sort playlist');
+    const sortWrap = h('div', 'relative', sortBtn, sortMenu);
+    const renderSort = (): void => {
+      const mode = playlist.sort ?? 'manual';
+      sortBtn.replaceChildren(icon(SORT_ICON), document.createTextNode(SORT_OPTIONS.find(o => o.id === mode)!.label));
+      sortBtn.className = `${BTN} ${mode === 'manual' ? OFF : ON}`;
+      sortBtn.setAttribute('aria-pressed', String(mode !== 'manual'));
+      sortBtn.title = 'Sort playlist — click to change the order';
+    };
+    const closeSortMenu = (open: boolean): void => {
+      sortMenu.classList.toggle('hidden', !open);
+      sortBtn.setAttribute('aria-expanded', String(open));
+    };
+    for (const o of SORT_OPTIONS) {
+      const item = h('button', `block w-full whitespace-nowrap rounded px-2 py-1.5 text-left text-xs text-zinc-300 hover:bg-zinc-800 ${FOCUS}`, o.label);
+      item.addEventListener('click', async () => {
+        closeSortMenu(false);
+        playlist.sort = o.id;
+        renderSort();
+        buildList();
         setHeading();
+        paintActive();
+        await setSort(playlist.id, o.id);
       });
-
-      row.append(play, rm);
-      rows.push(row);
-      list.append(row);
+      sortMenu.append(item);
     }
-
-    sortable(list, rows, (from, to) => {
-      playlist.videos.splice(to, 0, ...playlist.videos.splice(from, 1));
-      void moveVideo(playlist.id, from, to);
-      setHeading();
+    sortBtn.addEventListener('click', () => closeSortMenu(sortMenu.classList.contains('hidden')));
+    document.addEventListener('pointerdown', e => {
+      if (!sortMenu.classList.contains('hidden') && !sortWrap.contains(e.target as Node)) closeSortMenu(false);
     });
+    document.addEventListener('keydown', e => e.key === 'Escape' && closeSortMenu(false));
+    renderSort();
+    (document.getElementById('controls') as HTMLElement).append(sortWrap);
   }
+
 
   let lastSave = 0;
   let live = { t: 0, d: 0, state: '' };
@@ -324,8 +388,13 @@ async function start(firstId: string): Promise<void> {
     // re-initialise the player while the tab is hidden, so the loop stalled until the tab was opened.
     if (loop === 'one') return;
     handledEnd = true;
-    const i = loopList ? loopList.videos.findIndex(v => v.id === currentId) : -1;
-    show(i > -1 ? loopList!.videos[(i + 1) % loopList!.videos.length].id : currentId);
+    if (!loopList) {
+      show(currentId);
+      return;
+    }
+    const order = sortVideos(loopList.videos, loopList.sort);
+    const i = order.findIndex(v => v.id === currentId);
+    show(i > -1 ? order[(i + 1) % order.length].id : currentId);
   };
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
@@ -359,21 +428,8 @@ async function start(firstId: string): Promise<void> {
     }
     linkEl.href = `https://www.youtube.com/watch?v=${id}`;
 
-    const index = playlist ? playlist.videos.findIndex(x => x.id === id) : -1;
     setHeading();
-
-    rows.forEach((row, i) => {
-      const active = i === index;
-      row.classList.toggle('bg-zinc-800', active);
-      row.classList.toggle('ring-1', active);
-      row.classList.toggle('ring-red-500/60', active);
-      if (active) {
-        row.setAttribute('aria-current', 'true');
-        row.scrollIntoView({ block: 'nearest' });
-      } else {
-        row.removeAttribute('aria-current');
-      }
-    });
+    paintActive();
 
     history.replaceState(null, '', `?${new URLSearchParams(pl ? { v: id, pl } : { v: id })}`);
   };
@@ -399,9 +455,10 @@ async function start(firstId: string): Promise<void> {
   document.addEventListener('keydown', e => {
     if (e.target instanceof HTMLInputElement) return;
     if (!playlist) return;
-    const index = playlist.videos.findIndex(x => x.id === currentId);
-    if (e.key === 'n' && index > -1 && index < playlist.videos.length - 1) show(playlist.videos[index + 1].id);
-    if (e.key === 'p' && index > 0) show(playlist.videos[index - 1].id);
+    const order = orderedVideos();
+    const index = order.findIndex(x => x.id === currentId);
+    if (e.key === 'n' && index > -1 && index < order.length - 1) show(order[index + 1].id);
+    if (e.key === 'p' && index > 0) show(order[index - 1].id);
   });
 
   show(firstId);

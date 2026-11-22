@@ -1,24 +1,33 @@
 import '../styles.css';
-import { h, icon, CHEVRON_ICON, GEAR_ICON, TRASH_ICON } from '../lib/dom';
-import { cleanName, deletePlaylist, getPlaylists, moveVideo, removeVideo, renamePlaylist, savePlaylist, SAVED_SOURCE_ID } from '../lib/store';
+import { h, icon, CHECK_ICON, CHEVRON_ICON, GEAR_ICON, SHARE_ICON, TRASH_ICON } from '../lib/dom';
+import { cleanName, deletePlaylist, getListSort, getPlaylists, savePlaylist, setListSort, updatePlaylist, SAVED_SOURCE_ID } from '../lib/store';
+import { fetchVideo } from '../lib/innertube';
 import { sortable } from '../lib/sortable';
+import { PLAYLIST_SORT_OPTIONS, SORT_OPTIONS, sortPlaylists, sortVideos } from '../lib/sort';
 import { getProgress, progressOverlay, type Progress } from '../lib/progress';
 import { formatDuration, formatPublished } from '../lib/format';
 import { playerUrl, queueUrl, classifyUrl } from '../lib/url';
 import { saveLink, type SaveTarget } from '../lib/save';
-import { askConfirm, askText } from '../lib/dialog';
-import type { Playlist, PlaylistKind, Video } from '../lib/types';
+import { askChoice, askConfirm, askText } from '../lib/dialog';
+import type { ListSort, Playlist, PlaylistKind, SortMode, Video } from '../lib/types';
 
 const app = document.getElementById('app') as HTMLElement;
 let openId: string | null = null;
+// The detail view edits a working copy. Nothing reaches storage until Save, so a stray back
+// gesture cannot half-apply a rename, a type change and a reorder.
+let draft: Playlist | null = null;
+let dirty = false;
+const dropDraft = () => { draft = null; dirty = false; };
 
 const FOCUS = 'focus-visible:outline-2 focus-visible:outline-red-500 focus-visible:outline-offset-2';
 const HEADER = 'sticky top-0 z-10 flex items-center gap-2 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-900/90 backdrop-blur';
+const SELECT = `max-w-full appearance-none truncate rounded-lg border border-zinc-300 bg-white py-1.5 pl-2 pr-7 text-xs outline-none transition-colors hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 dark:bg-zinc-900 ${FOCUS}`;
 const KIND: Record<PlaylistKind, [string, string]> = {
   custom: ['Playlist', 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'],
   youtube: ['YouTube', 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300'],
   queue: ['Queue', 'bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-300'],
 };
+const KIND_OPTIONS: PlaylistKind[] = ['custom', 'youtube', 'queue'];
 
 // Built once: the bar is re-appended on every render, so typing survives a storage change.
 const linkInput = h('input', `w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-zinc-500 hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 dark:placeholder:text-zinc-400 ${FOCUS}`);
@@ -92,11 +101,33 @@ async function addLink(): Promise<void> {
     addStatus.textContent = text;
     addStatus.hidden = false;
   };
+  const link = classifyUrl(raw);
+  // ponytail: only a video link can land in the open playlist. A playlist/queue link always makes or
+  // refreshes its own by sourceId, so none is staged; refresh such a paste after Save.
+  if (draft && picked?.id === draft.id && link.type === 'video') {
+    if (draft.videos.some(v => v.id === link.videoId)) { say(`Already in ${draft.name}`, 'text-zinc-500 dark:text-zinc-400'); return; }
+    addButton.disabled = true;
+    say('Fetching...', 'text-zinc-500 dark:text-zinc-400');
+    try {
+      const meta = await fetchVideo(link.videoId);
+      if (meta) {
+        draft.videos.push({ ...meta, addedAt: Date.now() });
+        dirty = true;
+        linkInput.value = '';
+        say(`Added to ${draft.name} (unsaved)`, 'text-green-700 dark:text-green-400');
+        void render();
+      } else say('Video unavailable', 'text-red-600 dark:text-red-400');
+    } catch (err) {
+      say(err instanceof Error ? err.message : String(err), 'text-red-600 dark:text-red-400');
+    }
+    addButton.disabled = false;
+    return;
+  }
   addButton.disabled = true;
   addButton.setAttribute('aria-busy', 'true');
   say(`Saving to ${where}...`, 'text-zinc-500 dark:text-zinc-400');
   try {
-    const message = await saveLink(classifyUrl(raw), target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500 dark:text-zinc-400'));
+    const message = await saveLink(link, target, (done, total) => say(`Fetching ${done}/${total}…`, 'text-zinc-500 dark:text-zinc-400'));
     linkInput.value = '';
     say(message, 'text-green-700 dark:text-green-400');
     void render();
@@ -113,13 +144,20 @@ linkInput.addEventListener('keydown', e => {
 });
 
 async function render(): Promise<void> {
-  const playlists = await getPlaylists();
-  syncTargets(playlists);
+  const [playlists, sort] = await Promise.all([getPlaylists(), getListSort()]);
+  const ordered = sortPlaylists(playlists, sort);
+  syncTargets(ordered);
   const progress = await getProgress();
-  const playlist = playlists.find(p => p.id === openId);
-  if (openId && !playlist) openId = null;
+  const playlist = ordered.find(p => p.id === openId);
+  if (!playlist) {
+    openId = null;
+    dropDraft();
+  } else if (!draft || draft.id !== playlist.id) {
+    // Follow storage unless a draft is already open here: it holds the unsaved edits.
+    draft = structuredClone(playlist);
+  }
   progressThumbs.clear();
-  app.replaceChildren(playlist ? detail(playlist, progress) : list(playlists));
+  app.replaceChildren(draft ? detail(draft, progress) : list(ordered, sort));
 }
 
 function logo(size: number, className = ''): HTMLImageElement {
@@ -131,7 +169,7 @@ function logo(size: number, className = ''): HTMLImageElement {
   return img;
 }
 
-function list(playlists: Playlist[]): HTMLElement {
+function list(playlists: Playlist[], sort: ListSort): HTMLElement {
   const root = h('div');
   const gear = h('button', `ml-auto rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 ${FOCUS}`);
   gear.type = 'button';
@@ -153,6 +191,7 @@ function list(playlists: Playlist[]): HTMLElement {
     h('div', HEADER,
       logo(24),
       h('span', 'font-semibold', 'TubeList'),
+      h('span', 'text-xs text-zinc-500 dark:text-zinc-400', `v${chrome.runtime.getManifest().version}`),
       h('span', 'text-xs text-zinc-500 dark:text-zinc-400', String(playlists.length)),
       gear,
       create,
@@ -174,21 +213,38 @@ function list(playlists: Playlist[]): HTMLElement {
     return root;
   }
 
+  const sortSelect = h('select', SELECT);
+  sortSelect.setAttribute('aria-label', 'Sort playlists');
+  sortSelect.title = 'Sort the playlist list';
+  for (const o of PLAYLIST_SORT_OPTIONS) sortSelect.append(option(o.id, o.label));
+  sortSelect.value = sort;
+  sortSelect.addEventListener('change', async () => {
+    await setListSort(sortSelect.value as ListSort);
+    void render();
+  });
+  root.append(
+    h('div', 'flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+      h('label', 'text-xs text-zinc-500 dark:text-zinc-400', 'Sort'),
+      sortSelect,
+    ),
+  );
+
   const ul = h('ul', 'p-2');
   for (const p of playlists) {
     const btn = h('button', `pl w-full flex items-center gap-3 rounded-xl p-2 text-left hover:bg-zinc-100 dark:hover:bg-zinc-800 transition ${FOCUS}`);
     btn.addEventListener('click', () => {
       clearStatus();
+      dropDraft();
       openId = p.id;
       targetSelect.value = p.id;
       void render();
     });
 
-    const first = p.videos[0];
+    const latest = p.videos.reduce<Video | undefined>((a, b) => (!a || b.addedAt >= a.addedAt ? b : a), undefined);
     const thumb = h('div', 'relative shrink-0');
-    if (first) {
+    if (latest) {
       const img = h('img', 'relative w-20 h-[45px] rounded-md object-cover');
-      img.src = first.thumbnail;
+      img.src = latest.thumbnail;
       img.loading = 'lazy';
       img.alt = '';
       thumb.append(h('div', 'absolute -top-1 left-1 right-1 h-full rounded-md bg-zinc-300 dark:bg-zinc-700'), img);
@@ -213,33 +269,58 @@ function list(playlists: Playlist[]): HTMLElement {
   return root;
 }
 
+/** Writes the working copy back and drops it. Callers render. */
+async function saveDraft(): Promise<void> {
+  if (!draft) return;
+  await updatePlaylist(draft.id, { name: draft.name, kind: draft.kind, sort: draft.sort, videos: draft.videos });
+  draft = null;
+  dirty = false;
+}
+
+/** Back button: with unsaved edits, the user chooses Save, Discard, or stays (Cancel/Esc). */
+async function leaveDetail(p: Playlist): Promise<void> {
+  if (dirty) {
+    const choice = await askChoice({
+      title: 'Save your changes?',
+      body: `"${p.name}" has unsaved edits.`,
+      confirm: 'Save',
+      alt: 'Discard',
+    });
+    if (choice === null) return;
+    if (choice === 'confirm') await saveDraft();
+    else dropDraft();
+  }
+  clearStatus();
+  openId = null;
+  dropDraft();
+  targetSelect.value = SAVED;
+  void render();
+}
+
 function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   const root = h('div');
+  // Every edit lands here: the working copy changes, storage does not, until Save.
+  const edit = () => { dirty = true; void render(); };
 
   const back = h('button', `rounded-lg p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '←');
   back.setAttribute('aria-label', 'Back');
-  back.addEventListener('click', () => {
-    clearStatus();
-    openId = null;
-    targetSelect.value = SAVED;
-    void render();
-  });
+  back.addEventListener('click', () => void leaveDetail(p));
 
   const name = h('input', `min-w-0 flex-1 rounded-md border border-zinc-300 bg-transparent px-1 py-0.5 text-sm font-semibold outline-none hover:border-zinc-400 focus:ring-2 focus:ring-red-500 dark:border-zinc-700 ${FOCUS}`);
   name.value = p.name;
   name.setAttribute('aria-label', 'Playlist name');
   name.title = 'Click to rename';
-  const commitName = async () => {
+  const commitName = () => {
     const next = cleanName(name.value, p.name);
     name.value = next;
     if (next !== p.name) {
-      await renamePlaylist(p.id, next);
-      void render();
+      p.name = next;
+      edit();
     }
   };
-  name.addEventListener('change', () => void commitName());
+  name.addEventListener('change', () => commitName());
   name.addEventListener('keydown', e => {
-    if (e.key === 'Enter') void commitName();
+    if (e.key === 'Enter') commitName();
   });
 
   const pencil = h('button', `rounded-md p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, '✎');
@@ -249,24 +330,36 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
     name.select();
   });
 
-  const row = h('div', HEADER, back, name, pencil);
+  // Shown only once there is something to save.
+  const save = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-red-700 active:bg-red-800 ${FOCUS}`, 'Save');
+  save.hidden = !dirty;
+  save.addEventListener('click', () => void saveDraft().then(() => render()));
+
+  const row = h('div', HEADER, back, name, pencil, save);
 
   if (p.videos.length) {
-    const share = h('button', `rounded-md p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`, 'Share');
-    share.setAttribute('aria-label', 'Share playlist as YouTube link');
+    const share = h('button', `rounded-md p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${FOCUS}`);
+    const label = () => { share.title = 'Copy share link'; share.setAttribute('aria-label', 'Copy share link'); };
+    label();
+    share.append(icon(SHARE_ICON));
     share.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(queueUrl(p.videos.map(v => v.id)));
-        share.textContent = '✓ Copied link';
+        share.replaceChildren(icon(CHECK_ICON));
+        share.title = 'Copied!';
+        share.setAttribute('aria-label', 'Copied');
       } catch {
-        share.textContent = 'Copy failed';
+        share.title = 'Copy failed';
       }
-      setTimeout(() => { share.textContent = 'Share'; }, 1500);
+      setTimeout(() => {
+        share.replaceChildren(icon(SHARE_ICON));
+        label();
+      }, 1500);
     });
     row.append(share);
 
     const play = h('button', `rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 ${FOCUS}`, '▶ Play all');
-    play.addEventListener('click', () => void chrome.tabs.create({ url: playerUrl(p.videos[0].id, p.id) }));
+    play.addEventListener('click', () => void chrome.tabs.create({ url: playerUrl(sortVideos(p.videos, p.sort)[0].id, p.id) }));
     row.append(play);
   }
 
@@ -280,10 +373,29 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
     if (!ok) return;
     await deletePlaylist(p.id);
     openId = null;
+    dropDraft();
     void render();
   });
   row.append(del);
   root.append(row, addBar);
+
+  const selectCls = SELECT;
+
+  const kindSelect = h('select', selectCls);
+  kindSelect.setAttribute('aria-label', 'Playlist type');
+  kindSelect.title = "Change this playlist's type";
+  for (const k of KIND_OPTIONS) kindSelect.append(option(k, KIND[k][0]));
+  kindSelect.value = p.kind;
+  kindSelect.addEventListener('change', () => {
+    p.kind = kindSelect.value as PlaylistKind;
+    // Same rule the store applies: a custom playlist mirrors no YouTube source.
+    if (p.kind === 'custom' && p.sourceId !== SAVED_SOURCE_ID) p.sourceId = null;
+    edit();
+  });
+  root.append(h('div', 'flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+    h('label', 'text-xs text-zinc-500 dark:text-zinc-400', 'Type'),
+    kindSelect,
+  ));
 
   if (p.videos.length === 0) {
     root.append(h('p', 'p-8 text-center text-sm text-zinc-500 dark:text-zinc-400', 'This playlist is empty.'));
@@ -291,10 +403,28 @@ function detail(p: Playlist, progress: Record<string, Progress>): HTMLElement {
   }
 
   const ul = h('ul', 'p-2 space-y-1');
-  const rows = p.videos.map(v => videoRow(p, v, progress[v.id]));
+  const ordered = sortVideos(p.videos, p.sort);
+  const rows = ordered.map(v => videoRow(p, v, progress[v.id]));
   for (const row of rows) ul.append(row);
-  sortable(ul, rows, (from, to) => void moveVideo(p.id, from, to));
-  root.append(ul);
+  // Drag only makes sense in manual order: the sorted views are read-only.
+  if (!p.sort || p.sort === 'manual') sortable(ul, rows, (from, to) => {
+    p.videos.splice(to, 0, ...p.videos.splice(from, 1));
+    edit();
+  });
+
+  const sortSelect = h('select', selectCls);
+  sortSelect.setAttribute('aria-label', 'Sort videos');
+  sortSelect.title = 'Sort this playlist';
+  for (const o of SORT_OPTIONS) sortSelect.append(option(o.id, o.label));
+  sortSelect.value = p.sort ?? 'manual';
+  sortSelect.addEventListener('change', () => {
+    p.sort = sortSelect.value as SortMode;
+    edit();
+  });
+  root.append(h('div', 'flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-800',
+    h('label', 'text-xs text-zinc-500 dark:text-zinc-400', 'Sort'),
+    sortSelect,
+  ), ul);
   return root;
 }
 
@@ -341,7 +471,8 @@ function videoRow(p: Playlist, v: Video, prog: Progress | undefined): HTMLElemen
       confirm: 'Remove',
     });
     if (!ok) return;
-    await removeVideo(p.id, v.id);
+    p.videos = p.videos.filter(x => x.id !== v.id);
+    dirty = true;
     void render();
   });
 

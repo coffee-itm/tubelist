@@ -11,6 +11,13 @@ interface Draft {
   body?: string;
   label?: string; // present → ask for text
   confirm: string;
+  alt?: string;   // present → a third button, between Cancel and Confirm
+}
+
+interface Result {
+  ok: boolean;
+  alt: boolean;
+  value: string;
 }
 
 /** Distinguishes two dialogs that are somehow open at once (a double-click on Remove). */
@@ -21,11 +28,11 @@ let seq = 0;
  * platform rather than from hand-rolled key handling. Resolves the field text ('' when there is
  * none) or null when the user cancelled.
  */
-function open(draft: Draft): Promise<string | null> {
+function open(draft: Draft): Promise<Result> {
   const n = ++seq;
   const titleId = `tl-dialog-title-${n}`;
   const bodyId = `tl-dialog-body-${n}`;
-  const { promise, resolve } = Promise.withResolvers<string | null>();
+  const { promise, resolve } = Promise.withResolvers<Result>();
   const dlg = h('dialog', CARD);
   dlg.setAttribute('aria-labelledby', titleId);
   if (draft.body) dlg.setAttribute('aria-describedby', bodyId);
@@ -39,6 +46,12 @@ function open(draft: Draft): Promise<string | null> {
   const cancel = h('button', CANCEL, 'Cancel');
   cancel.type = 'button';
   cancel.addEventListener('click', () => dlg.close('cancel'));
+
+  const alt = draft.alt ? h('button', CANCEL, draft.alt) : null;
+  if (alt) {
+    alt.type = 'button';
+    alt.addEventListener('click', () => dlg.close('alt'));
+  }
 
   const heading = h('h2', 'text-sm font-semibold', draft.title);
   heading.id = titleId;
@@ -60,12 +73,12 @@ function open(draft: Draft): Promise<string | null> {
     form.append(label);
   }
 
-  form.append(h('div', 'flex justify-end gap-2 pt-1', cancel, submit));
+  form.append(h('div', 'flex justify-end gap-2 pt-1', cancel, alt, submit));
   dlg.append(form);
 
   dlg.addEventListener('close', () => {
     dlg.remove();
-    resolve(dlg.returnValue === 'ok' ? (field?.value.trim() ?? '') : null);
+    resolve({ ok: dlg.returnValue === 'ok', alt: dlg.returnValue === 'alt', value: field?.value.trim() ?? '' });
   });
 
   document.body.append(dlg);
@@ -75,7 +88,14 @@ function open(draft: Draft): Promise<string | null> {
   return promise;
 }
 
-export const askText = (draft: { title: string; label: string; confirm: string; body?: string }) => open(draft);
+export const askText = async (draft: { title: string; label: string; confirm: string; body?: string }): Promise<string | null> =>
+  (await open(draft)).value || null;
 
 export const askConfirm = (draft: { title: string; body: string; confirm: string }): Promise<boolean> =>
-  open(draft).then(value => value !== null);
+  open(draft).then(r => r.ok);
+
+/** Three answers: the confirm button, the alt button, or null (Cancel/Esc). */
+export const askChoice = async (draft: { title: string; body: string; confirm: string; alt: string }): Promise<'confirm' | 'alt' | null> => {
+  const r = await open(draft);
+  return r.ok ? 'confirm' : r.alt ? 'alt' : null;
+};

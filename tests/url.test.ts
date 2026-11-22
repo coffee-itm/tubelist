@@ -39,8 +39,8 @@ it('builds watch URLs', () => {
 });
 
 it('builds embed URLs with the resume point as `start`', () => {
-  expect(embedUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1');
-  expect(embedUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&start=125');
+  expect(embedUrl('dQw4w9WgXcQ')).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&tubelist=1');
+  expect(embedUrl('dQw4w9WgXcQ', 125.7)).toBe('https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1&tubelist=1&start=125');
 });
 
 it('builds queue links', () => {

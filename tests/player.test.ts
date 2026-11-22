@@ -57,7 +57,7 @@ beforeAll(async () => {
 });
 
 it('frames the embed player and shows the stored description by default', async () => {
-  await vi.waitFor(() => expect(iframe().src).toBe('https://www.youtube.com/embed/' + A + '?autoplay=1'));
+  await vi.waitFor(() => expect(iframe().src).toBe('https://www.youtube.com/embed/' + A + '?autoplay=1&tubelist=1'));
   expect(document.getElementById('title')?.textContent).toBe('Video A');
   expect(desc().hidden).toBe(false);
   expect(desc().textContent).toContain('About the video');

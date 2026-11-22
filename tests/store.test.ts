@@ -1,4 +1,4 @@
-import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, moveVideo, removeVideo, renamePlaylist, deletePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS, getPlayerPrefs, setPlayerPrefs, DEFAULT_PLAYER_PREFS } from '../src/lib/store';
+import { getPlaylists, savePlaylist, findBySourceId, addToSaved, SAVED_SOURCE_ID, addVideo, moveVideo, removeVideo, renamePlaylist, deletePlaylist, setKind, updatePlaylist, cleanName, getSkipPrefs, setSkipPrefs, ensureSkipPrefs, DEFAULT_SKIP_PREFS, getPlayerPrefs, setPlayerPrefs, DEFAULT_PLAYER_PREFS } from '../src/lib/store';
 import { getProgress, setProgress } from '../src/lib/progress';
 import type { Video } from '../src/lib/types';
 
@@ -75,6 +75,30 @@ it('throws on an unknown playlist id', async () => {
   await expect(renamePlaylist('nope', 'x')).rejects.toThrow('Playlist not found');
 });
 
+it('changes playlist kind, dropping the YouTube link when it becomes custom', async () => {
+  const p = await savePlaylist({ name: 'A', kind: 'youtube', sourceId: 'PL1', videos: [] });
+  await setKind(p.id, 'queue');
+  expect((await getPlaylists())[0]).toMatchObject({ kind: 'queue', sourceId: 'PL1' });
+  await setKind(p.id, 'custom');
+  expect((await getPlaylists())[0]).toMatchObject({ kind: 'custom', sourceId: null });
+});
+
+it('applies a whole playlist edit at once and prunes dropped videos', async () => {
+  const p = await savePlaylist({ name: 'A', kind: 'youtube', sourceId: 'PL1', videos: [vid('aaaaaaaaaaa'), vid('bbbbbbbbbbb')] });
+  await setProgress('aaaaaaaaaaa', 1, 2, false);
+  await updatePlaylist(p.id, { name: 'B', kind: 'custom', sort: 'oldest', videos: [vid('bbbbbbbbbbb')] });
+  expect((await getPlaylists())[0]).toMatchObject({ name: 'B', kind: 'custom', sort: 'oldest', sourceId: null });
+  expect((await getPlaylists())[0].videos.map(v => v.id)).toEqual(['bbbbbbbbbbb']);
+  expect((await getProgress())['aaaaaaaaaaa']).toBeUndefined();
+});
+
+it('keeps the Saved playlist linked when its kind changes', async () => {
+  await addToSaved(vid('aaaaaaaaaaa'));
+  const [p] = await getPlaylists();
+  await setKind(p.id, 'youtube');
+  expect((await getPlaylists())[0]).toMatchObject({ kind: 'youtube', sourceId: SAVED_SOURCE_ID });
+});
+
 it('sorts newest first', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(1000);
@@ -83,6 +107,19 @@ it('sorts newest first', async () => {
   await savePlaylist({ name: 'new', kind: 'custom', sourceId: null, videos: [] });
   vi.useRealTimers();
   expect((await getPlaylists()).map(p => p.name)).toEqual(['new', 'old']);
+});
+
+it('floats a playlist to the top when it is edited', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(1000);
+  const a = await savePlaylist({ name: 'A', kind: 'custom', sourceId: null, videos: [] });
+  vi.setSystemTime(2000);
+  await savePlaylist({ name: 'B', kind: 'custom', sourceId: null, videos: [] });
+  expect((await getPlaylists()).map(p => p.name)).toEqual(['B', 'A']);
+  vi.setSystemTime(3000);
+  await addVideo(a.id, vid('aaaaaaaaaaa'));
+  expect((await getPlaylists()).map(p => p.name)).toEqual(['A', 'B']);
+  vi.useRealTimers();
 });
 
 it('adds to an auto-created Saved playlist, once per video, surviving rename', async () => {

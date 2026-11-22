@@ -1,5 +1,6 @@
-import type { Playlist, PlaylistKind, PlayerPrefs, SkipPrefs, Video } from './types';
+import type { ListSort, Playlist, PlaylistKind, PlayerPrefs, SkipPrefs, SortMode, Video } from './types';
 import { PROGRESS_KEY, withProgressLock } from './progress';
+import { PLAYLIST_SORT_OPTIONS, SORT_OPTIONS, lastActive } from './sort';
 
 const KEY = 'playlists';
 
@@ -12,6 +13,14 @@ export interface SaveInput {
   name: string;
   kind: PlaylistKind;
   sourceId: string | null;
+  videos: Video[];
+}
+
+/** The whole editable state of one playlist, applied at once (the popup's Save button). */
+export interface UpdateInput {
+  name: string;
+  kind: PlaylistKind;
+  sort: SortMode | undefined;
   videos: Video[];
 }
 
@@ -30,6 +39,9 @@ type StoreOp =
   | { op: 'removeVideo'; playlistId: string; videoId: string }
   | { op: 'moveVideo'; playlistId: string; from: number; to: number }
   | { op: 'rename'; playlistId: string; name: string }
+  | { op: 'setSort'; playlistId: string; sort: SortMode }
+  | { op: 'setKind'; playlistId: string; kind: PlaylistKind }
+  | { op: 'update'; playlistId: string; input: UpdateInput }
   | { op: 'delete'; playlistId: string };
 
 interface OpOutcome {
@@ -45,6 +57,8 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
     return p;
   };
   const keep = (value: unknown = null): OpOutcome => ({ playlists, value, removed: [] });
+  // Every content edit bumps the playlist, so the list can float the one just touched to the top.
+  const touch = (p: Playlist): void => { p.updatedAt = Date.now(); };
 
   switch (op.op) {
     case 'save': {
@@ -55,9 +69,11 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
         existing.name = op.input.name;
         existing.kind = op.input.kind;
         existing.videos = op.input.videos;
+        touch(existing);
         return { playlists, value: existing, removed };
       }
-      const saved: Playlist = { ...op.input, id: crypto.randomUUID(), createdAt: Date.now() };
+      const now = Date.now();
+      const saved: Playlist = { ...op.input, id: crypto.randomUUID(), createdAt: now, updatedAt: now };
       playlists.push(saved);
       return { playlists, value: saved, removed: [] };
     }
@@ -65,21 +81,25 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
       const p = find(op.playlistId);
       if (p.videos.some(v => v.id === op.video.id)) return keep('duplicate');
       p.videos.push(op.video);
+      touch(p);
       return keep('added');
     }
     case 'addToSaved': {
       let p = playlists.find(x => x.sourceId === SAVED_SOURCE_ID);
       if (!p) {
-        p = { id: crypto.randomUUID(), name: 'Saved', kind: 'custom', sourceId: SAVED_SOURCE_ID, createdAt: Date.now(), videos: [] };
+        const now = Date.now();
+        p = { id: crypto.randomUUID(), name: 'Saved', kind: 'custom', sourceId: SAVED_SOURCE_ID, createdAt: now, updatedAt: now, videos: [] };
         playlists.push(p);
       }
       if (p.videos.some(v => v.id === op.video.id)) return keep('duplicate');
       p.videos.push(op.video);
+      touch(p);
       return keep('added');
     }
     case 'removeVideo': {
       const p = find(op.playlistId);
       p.videos = p.videos.filter(v => v.id !== op.videoId);
+      touch(p);
       return { playlists, value: null, removed: [op.videoId] };
     }
     case 'moveVideo': {
@@ -87,11 +107,40 @@ function applyOp(playlists: Playlist[], op: StoreOp): OpOutcome {
       const p = find(op.playlistId);
       if (op.from < 0 || op.to < 0 || op.from >= p.videos.length || op.to >= p.videos.length) return keep();
       p.videos.splice(op.to, 0, ...p.videos.splice(op.from, 1));
+      touch(p);
       return keep();
     }
-    case 'rename':
-      find(op.playlistId).name = op.name;
+    case 'rename': {
+      const p = find(op.playlistId);
+      p.name = op.name;
+      touch(p);
       return keep();
+    }
+    case 'setSort':
+      find(op.playlistId).sort = op.sort;
+      return keep();
+    case 'setKind': {
+      const p = find(op.playlistId);
+      p.kind = op.kind;
+      // A custom playlist is not a mirror of any YouTube source, so drop the link
+      // that a later save would otherwise merge into.
+      if (op.kind === 'custom' && p.sourceId !== SAVED_SOURCE_ID) p.sourceId = null;
+      touch(p);
+      return keep();
+    }
+    case 'update': {
+      const p = find(op.playlistId);
+      const next = new Set(op.input.videos.map(v => v.id));
+      const removed = p.videos.map(v => v.id).filter(id => !next.has(id));
+      p.name = op.input.name;
+      p.kind = op.input.kind;
+      // Same rule as setKind: a custom playlist is not a mirror of any YouTube source.
+      if (p.kind === 'custom' && p.sourceId !== SAVED_SOURCE_ID) p.sourceId = null;
+      p.sort = op.input.sort;
+      p.videos = op.input.videos;
+      touch(p);
+      return { playlists, value: p, removed };
+    }
     case 'delete': {
       const p = playlists.find(x => x.id === op.playlistId);
       if (!p) return keep(); // already gone: deleting twice is not an error
@@ -121,6 +170,12 @@ function validOp(op: StoreOp): boolean {
     case 'removeVideo': return typeof op.playlistId === 'string' && typeof op.videoId === 'string';
     case 'moveVideo': return typeof op.playlistId === 'string' && Number.isInteger(op.from) && Number.isInteger(op.to);
     case 'rename': return typeof op.playlistId === 'string' && typeof op.name === 'string';
+    case 'setSort': return typeof op.playlistId === 'string' && SORT_OPTIONS.some(o => o.id === op.sort);
+    case 'setKind': return typeof op.playlistId === 'string' && ['custom', 'youtube', 'queue'].includes(op.kind);
+    case 'update': return typeof op.playlistId === 'string' && !!op.input && typeof op.input.name === 'string'
+      && ['custom', 'youtube', 'queue'].includes(op.input.kind)
+      && (op.input.sort === undefined || SORT_OPTIONS.some(o => o.id === op.input.sort))
+      && Array.isArray(op.input.videos) && op.input.videos.every(isVideo);
     case 'delete': return typeof op.playlistId === 'string';
     default: return false;
   }
@@ -208,7 +263,7 @@ async function mutate<R>(op: StoreOp): Promise<R> {
 }
 
 export async function getPlaylists(): Promise<Playlist[]> {
-  return (await read()).sort((a, b) => b.createdAt - a.createdAt);
+  return (await read()).sort((a, b) => lastActive(b) - lastActive(a));
 }
 
 export async function savePlaylist(input: SaveInput): Promise<Playlist> {
@@ -237,6 +292,18 @@ export async function moveVideo(playlistId: string, from: number, to: number): P
 
 export async function renamePlaylist(playlistId: string, name: string): Promise<void> {
   await mutate({ op: 'rename', playlistId, name });
+}
+
+export async function setSort(playlistId: string, sort: SortMode): Promise<void> {
+  await mutate({ op: 'setSort', playlistId, sort });
+}
+
+export async function setKind(playlistId: string, kind: PlaylistKind): Promise<void> {
+  await mutate({ op: 'setKind', playlistId, kind });
+}
+
+export async function updatePlaylist(playlistId: string, input: UpdateInput): Promise<void> {
+  await mutate({ op: 'update', playlistId, input });
 }
 
 export async function deletePlaylist(playlistId: string): Promise<void> {
@@ -303,6 +370,18 @@ export async function getPlayerPrefs(): Promise<PlayerPrefs> {
 
 export async function setPlayerPrefs(p: PlayerPrefs): Promise<void> {
   await chrome.storage.local.set({ [PLAYER_KEY]: p });
+}
+
+// Popup list order. Absent (older profile) falls back to newest first.
+const LIST_SORT_KEY = 'listSort';
+
+export async function getListSort(): Promise<ListSort> {
+  const saved = (await chrome.storage.local.get(LIST_SORT_KEY))[LIST_SORT_KEY] as ListSort | undefined;
+  return PLAYLIST_SORT_OPTIONS.some(o => o.id === saved) ? (saved as ListSort) : 'newest';
+}
+
+export async function setListSort(mode: ListSort): Promise<void> {
+  await chrome.storage.local.set({ [LIST_SORT_KEY]: mode });
 }
 
 // ponytail: code points, not grapheme clusters — a flag emoji can still be cut in half at 100.

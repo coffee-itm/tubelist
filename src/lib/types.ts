@@ -17,7 +17,9 @@ export interface Playlist {
   kind: PlaylistKind;
   sourceId: string | null;    // YouTube list ID for 'youtube'/'queue' (TL… id), null for custom & watch_videos queues
   createdAt: number;
+  updatedAt?: number;         // last content edit; absent on playlists stored before this field
   videos: Video[];
+  sort?: SortMode;            // display order; absent = 'manual'
 }
 
 /** SponsorBlock preferences (chrome.storage.local key `skipPrefs`). */
@@ -31,6 +33,12 @@ export interface PlayerPrefs {
   description: boolean; // show the video description under the player
   sync: boolean;        // frame the signed-in watch page (watch history, account resume); false = embed player
 }
+
+/** View order for a playlist's videos. `manual` keeps the stored array order. */
+export type SortMode = 'manual' | 'newest' | 'oldest' | 'longest' | 'letter';
+
+/** View order for the playlist list. */
+export type ListSort = 'newest' | 'oldest' | 'letter';
 
 export type LinkInfo =
   | { type: 'video'; videoId: string }
